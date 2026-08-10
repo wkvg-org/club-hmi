@@ -34,6 +34,75 @@ module/                  Out-of-tree Zephyr module
 └── include/             Public driver API headers
 ```
 
+## SD Card Configuration
+
+Configuration is loaded from the FAT32 SD card at boot. All files are JSON
+and optional — built-in defaults are used when a file is absent.
+
+### `/SD:/bar_dashboard.json`
+
+```json
+{
+  "data": {
+    "device_name": "bar-dashboard",
+    "mqtt_server_ip": "192.168.2.128",
+    "mqtt_server_domain": "mqtt.moai.sk",
+    "mqtt_server_port": 1883,
+    "directus_server_ip": "192.168.2.128",
+    "directus_server_domain": "directus.moai.sk",
+    "directus_server_port": 443,
+    "ntp_server_domain_1": "192.53.103.108",
+    "ntp_server_domain_2": "192.53.103.104",
+    "ntp_server_domain_3": "192.53.103.103",
+    "ntp_server_port": 123
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `device_name` | string | `bar-dashboard` | Device identifier |
+| `mqtt_server_ip` | string | `192.168.2.128` | MQTT broker IP (preferred over domain) |
+| `mqtt_server_domain` | string | `mqtt.moai.sk` | MQTT broker hostname |
+| `mqtt_server_port` | number | `1883` | MQTT broker port |
+| `directus_server_ip` | string | `192.168.2.128` | Directus CMS IP |
+| `directus_server_domain` | string | `directus.moai.sk` | Directus CMS hostname |
+| `directus_server_port` | number | `443` | Directus HTTPS port |
+| `ntp_server_domain_1-3` | string | PTB servers | NTP time server IPs or hostnames |
+| `ntp_server_port` | number | `123` | NTP port |
+
+### `/SD:/creds.json`
+
+```json
+{
+  "mqtt": {
+    "username": "",
+    "password": ""
+  },
+  "directus": {
+    "bearer_token": ""
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `mqtt.username` | string | `""` | MQTT broker username (empty = anonymous) |
+| `mqtt.password` | string | `""` | MQTT broker password |
+| `directus.bearer_token` | string | `""` | Directus API bearer token |
+
+### `/SD:/settings.json`
+
+Written by the firmware when the backlight slider is moved. Read at boot.
+
+```json
+{"backlight": 80}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `backlight` | number | `100` | LCD backlight brightness (0–100 %) |
+
 ## Build
 
 Requires a Zephyr workspace at `~/zephyrproject`.
