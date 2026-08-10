@@ -1,0 +1,18 @@
+description: |
+  Jadard JD9365 MIPI-DSI TFT panel controller, as used on the Waveshare
+  10.1" DSI touch panel for the ESP32-P4-NANO board (800x1280, 2 data lanes).
+
+compatible: "jadard,jd9365"
+
+include: [mipi-dsi-device.yaml, display-controller.yaml]
+
+properties:
+  rotation:
+    type: int
+    default: 0
+    enum:
+      - 0
+      - 90
+      - 180
+      - 270
+    description: Display rotation (CW) in degrees.

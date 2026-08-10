@@ -1,0 +1,11 @@
+# Waveshare ESP32-P4-NANO board configuration
+
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_WAVESHARE_ESP32P4_NANO_ESP32P4_HPCORE
+
+# The board always carries PSRAM and it is required for the DSI framebuffer.
+config ESP_SPIRAM
+	default y
+
+endif # BOARD_WAVESHARE_ESP32P4_NANO_ESP32P4_HPCORE

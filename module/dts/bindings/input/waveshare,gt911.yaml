@@ -1,0 +1,12 @@
+# Copyright (c) 2026 club-display
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Goodix GT911 capacitive touch controller on the Waveshare 10.1" DSI
+  display, polled via I2C. This variant of the board does not route the
+  GT911 INT/RST pins, so the controller is polled periodically instead of
+  interrupt-driven.
+
+compatible: "waveshare,gt911"
+
+include: [i2c-device.yaml, touchscreen-common.yaml]

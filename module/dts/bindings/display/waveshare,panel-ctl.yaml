@@ -1,0 +1,10 @@
+description: |
+  Waveshare on-panel power-sequencing and backlight controller, found on the
+  10.1" MIPI-DSI touch panel used with the ESP32-P4-NANO board. This is a
+  small on-board microcontroller reachable over I2C (not a display bridge
+  chip): register 0x95 sequences the panel's power rails, register 0x96
+  controls backlight brightness (0-255).
+
+compatible: "waveshare,panel-ctl"
+
+include: [i2c-device.yaml]

@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config HEAP_MEM_POOL_ADD_SIZE_BOARD
+	int
+	default 4096 if BOARD_WAVESHARE_ESP32P4_NANO_ESP32P4_HPCORE

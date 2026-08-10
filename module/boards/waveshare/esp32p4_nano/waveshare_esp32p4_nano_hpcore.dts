@@ -1,0 +1,257 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Waveshare ESP32-P4-NANO. Zephyr has no upstream support for this exact
+ * board; it is derived from the espressif,esp32p4/waveshare,esp32p4_eth SoC
+ * setup (same SoC, same n32r32 flash/PSRAM SKU, same I2C0 pins), with the
+ * ethernet-specific nodes dropped and the on-board 10.1" MIPI-DSI panel
+ * added. See PLAN.md for the full rationale.
+ *
+ * Peripherals *not* wired here (boot button, SD card slot, USB OTG pins) are
+ * intentionally omitted: their exact GPIOs for this specific board variant
+ * were not verified against real hardware/schematics and are out of scope
+ * for display bring-up.
+ */
+
+/dts-v1/;
+
+#include <espressif/esp32p4/esp32p4_n16r32.dtsi>
+#include "waveshare_esp32p4_nano_hpcore-pinctrl.dtsi"
+#include <zephyr/dt-bindings/mipi_dsi/mipi_dsi.h>
+#include <espressif/partitions_0x2000_default_16M.dtsi>
+
+/ {
+	model = "Waveshare ESP32-P4-NANO HP Core";
+	compatible = "waveshare,esp32-p4-nano";
+
+	chosen {
+		zephyr,sram = &sramhp;
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
+		zephyr,display = &mipi_dsi_dpi;
+		zephyr,touch = &gt911;
+	};
+
+	aliases {
+		i2c-0 = &i2c0;
+		uart-0 = &uart0;
+		watchdog0 = &wdt0;
+	};
+
+	/*
+	 * Owns the DSI framebuffer + DW-GDMA scan-out; deliberately a plain
+	 * root child (not a DSI-bus child of &mipi_dsi) since it is not a
+	 * DSI peripheral. Its reg overlaps &mipi_dsi's "bridge" bank on
+	 * purpose: the driver maps that same register window itself.
+	 */
+	mipi_dsi_dpi: mipi-dsi-dpi@500a0800 {
+		compatible = "espressif,esp32-mipi-dsi-dpi";
+		reg = <0x500a0800 0x800>;
+		width = <800>;
+		height = <1280>;
+		pixel-format = <MIPI_DSI_PIXFMT_RGB565>;
+	};
+
+	/* FATFS on the SD card; auto-mounted once the SDHC disk is ready
+	 * (FATFS init priority 99 > SDHC 85). Files: /SD:/bar_dashboard.json,
+	 * /SD:/creds.json, /SD:/settings.json. */
+	fstab {
+		compatible = "zephyr,fstab";
+
+		ffs1: ffs1 {
+			compatible = "zephyr,fstab,fatfs";
+			automount;
+			disk-access;
+			mount-point = "/SD:";
+		};
+	};
+};
+
+/*
+ * This board carries pre-v3 (v1.3) ESP32-P4 silicon, whose valid CPU
+ * frequencies are 90/180/360 MHz. Using a frequency outside that set
+ * builds but fails at boot with "invalid CPU frequency".
+ */
+&cpu0 {
+	clock-frequency = <DT_FREQ_M(360)>;
+};
+
+&cpu1 {
+	clock-frequency = <DT_FREQ_M(360)>;
+};
+
+&uart0 {
+	status = "okay";
+	current-speed = <115200>;
+	pinctrl-0 = <&uart0_default>;
+	pinctrl-names = "default";
+};
+
+&trng0 {
+	status = "okay";
+};
+
+&coretemp {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+	/* The Waveshare panel-ctl chip (a small on-board MCU, likely
+	 * bit-banged/software I2C, not a dedicated I2C peripheral) is used
+	 * at 100 kHz (I2C_BITRATE_STANDARD) in the working Arduino/ESP-IDF
+	 * reference (arduino-display/displays/displays_config.h:
+	 * i2c_clock_speed = 100000) - not I2C_BITRATE_FAST (400 kHz).
+	 */
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+	pinctrl-0 = <&i2c0_default>;
+	pinctrl-names = "default";
+
+	panel_ctl: panel-ctl@45 {
+		compatible = "waveshare,panel-ctl";
+		reg = <0x45>;
+	};
+
+	/* GT911 touch controller on the 10.1" DSI display. The board does not
+	 * route the INT/RST pins, so it is polled via I2C. Coordinate
+	 * transform: the panel is mounted landscape (LVGL logical 1280x800,
+	 * ROTATION_270). The GT911 reports panel-native portrait
+	 * coordinates (x: 0-799, y: 0-1279); inverting x and swapping the
+	 * axes maps them into the LVGL logical space (x = touch y,
+	 * y = 799 - touch x). */
+	gt911: gt911@5d {
+		compatible = "waveshare,gt911";
+		reg = <0x5d>;
+		screen-width = <800>;
+		screen-height = <1280>;
+		inverted-x;
+		swapped-x-y;
+	};
+};
+
+/*
+ * 10/100M Ethernet: same wiring as the Waveshare esp32p4_eth board (on
+ * which the Arduino reference also runs) - the onboard PHY (TLK110, addr
+ * 1) on MDC 31 / MDIO 52, reset/power on GPIO 51 (gpio1 19), RMII with
+ * the 50 MHz ref clock supplied by the PHY (EMAC_CLK_EXT_IN).
+ */
+/* Ethernet (MDC 31/MDIO 52, TLK110 @1, RMII): re-enabled after the
+ * firmware size reduction (520KB -> 418KB) reduced the flash-XIP cache
+ * pressure that caused the EMAC+LVGL instability on this pre-v3 silicon. */
+&mdio {
+	pinctrl-0 = <&mdio_default>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	phy: ethernet-phy@1 {
+		compatible = "ethernet-phy";
+		reg = <1>;
+		reset-gpios = <&gpio1 19 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&eth {
+	status = "okay";
+	phy-handle = <&phy>;
+	pinctrl-0 = <&rmii_default>;
+	pinctrl-names = "default";
+};
+
+/* SD card slot (SDIO 3.0), same pins as the eth board. */
+&sdhc {
+	sdhc0: sdhc@0 {
+		status = "okay";
+		bus-width = <4>;
+		max-bus-freq = <40000000>;
+		clk-pin = <43>;
+		cmd-pin = <44>;
+		d0-pin = <39>;
+		d1-pin = <40>;
+		d2-pin = <41>;
+		d3-pin = <42>;
+
+		mmc {
+			compatible = "zephyr,sdmmc-disk";
+			disk-name = "SD";
+			status = "okay";
+		};
+	};
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&wdt0 {
+	status = "okay";
+};
+
+&dma {
+	status = "okay";
+};
+
+&dma_axi {
+	status = "okay";
+};
+
+&ldo {
+	status = "okay";
+
+	ldo1@1 {
+		regulator-init-microvolt = <3300000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
+	ldo2@2 {
+		regulator-init-microvolt = <1800000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
+	/* VO3: MIPI DSI D-PHY power rail. */
+	ldo3@3 {
+		regulator-init-microvolt = <2500000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
+	ldo4@4 {
+		regulator-init-microvolt = <3300000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+};
+
+&mipi_dsi {
+	status = "okay";
+	data-lanes = <2>;
+	lane-bit-rate-mbps = <1500>;
+	dpi-clock-freq-mhz = <80>;
+	phy-supply = <&ldo3>;
+
+	jd9365: jd9365@0 {
+		compatible = "jadard,jd9365";
+		reg = <0>;
+		data-lanes = <2>;
+		pixel-format = <MIPI_DSI_PIXFMT_RGB565>;
+		width = <800>;
+		height = <1280>;
+
+		display-timings {
+			compatible = "zephyr,panel-timing";
+			hsync-len = <20>;
+			hback-porch = <20>;
+			hfront-porch = <40>;
+			vsync-len = <4>;
+			vback-porch = <10>;
+			vfront-porch = <30>;
+			hsync-active = <0>;
+			vsync-active = <0>;
+			de-active = <1>;
+			pixelclk-active = <0>;
+		};
+	};
+};

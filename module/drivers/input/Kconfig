@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config INPUT_WAVESHARE_GT911
+	bool "Waveshare GT911 polled touch controller"
+	default y
+	depends on DT_HAS_WAVESHARE_GT911_ENABLED
+	select I2C
+	select INPUT_TOUCH
+	help
+	  Polled GT911 touch driver for the Waveshare ESP32-P4-NANO 10.1"
+	  DSI display (the board does not route the GT911 INT/RST pins).

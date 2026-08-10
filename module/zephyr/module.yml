@@ -1,0 +1,7 @@
+name: club_display_hw
+build:
+  cmake: .
+  kconfig: Kconfig
+  settings:
+    board_root: .
+    dts_root: .

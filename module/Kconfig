@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
+rsource "drivers/mipi_dsi/Kconfig"
+rsource "drivers/display/Kconfig"
+rsource "drivers/input/Kconfig"

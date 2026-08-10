@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config ESP32_MIPI_DSI_DPI
+	bool "Espressif ESP32-P4 MIPI-DSI DPI framebuffer scan-out"
+	default y
+	depends on DT_HAS_ESPRESSIF_ESP32_MIPI_DSI_DPI_ENABLED
+	depends on SOC_SERIES_ESP32P4
+	select DISPLAY
+	select MIPI_DSI
+	select CACHE_MANAGEMENT
+	help
+	  Owns the DSI framebuffer (allocated from PSRAM) and the DW-GDMA
+	  channel that continuously scans it into the DSI bridge. This is the
+	  zephyr,display chosen device.
+
+config JD9365
+	bool "Jadard JD9365 MIPI-DSI display controller"
+	default y
+	depends on DT_HAS_JADARD_JD9365_ENABLED
+	select MIPI_DSI
+	help
+	  Enable the JD9365 MIPI-DSI panel driver, as used on the Waveshare
+	  10.1" DSI touch panel.
+
+config WAVESHARE_PANEL_CTL
+	bool "Waveshare panel power-sequencing and backlight controller"
+	default y
+	depends on DT_HAS_WAVESHARE_PANEL_CTL_ENABLED
+	depends on I2C
+	help
+	  Enable the I2C power-sequencing and backlight driver for the small
+	  on-board controller found on Waveshare MIPI-DSI touch panels.
