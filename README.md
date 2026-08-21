@@ -1,4 +1,4 @@
-# club-display
+# club-hmi
 
 Bar-dashboard touch-screen firmware for the Waveshare ESP32-P4-NANO
 10.1" MIPI-DSI panel. LVGL-based UI with time/date display, event
@@ -6,10 +6,12 @@ schedule (Directus CMS), DMX lighting control, and settings.
 
 ## Hardware
 
-- **MCU**: ESP32-P4 (hpcore, pre-v3 silicon, 360 MHz)
-- **Display**: 10.1" MIPI-DSI panel, 800×1280 portrait, mounted landscape @ 270°
-- **Touch**: GT911 controller, polled via I²C
-- **Ethernet**: EMAC with TLK110 PHY, static IP 192.168.2.130
+- **MCU**: ESP32-P4 (hpcore, pre-v3 silicon)
+- **Display**: 10.1" MIPI-DSI panel, 800×1280 portrait, mounted landscape @
+  270° (logical 1280×800). Framebuffer lives in PSRAM (does not fit in the
+  384 KB hpcore SRAM).
+- **Touch**: GT911 controller, polled via I²C.
+- **Ethernet**: EMAC with TLK110 PHY (see *Network* below).
 
 ## Architecture
 
@@ -17,10 +19,10 @@ schedule (Directus CMS), DMX lighting control, and settings.
 src/
 ├── main.c              Entry point, display init, backend threads, LVGL loop
 └── modules/
-    ├── config/          SD-card configuration (bar_dashboard.json, creds.json)
-    ├── net/             Ethernet bring-up, MQTT client, DMX UDP sender, Directus
-    ├── time/            NTP time sync (raw UDP, CET/CEST DST)
-    ├── ui/              LVGL dashboard (tabs: overview, pager, DMX, alarm, settings)
+    ├── config/          SD-card configuration (bar_dashboard.json, creds.json, settings.json)
+    ├── net/             Ethernet bring-up, MQTT client, DMX sender, Directus
+    ├── time/            NTP time sync (SNTP, CET/CEST DST)
+    ├── ui/              LVGL dashboard (tabs: overview, pager, light, alarm, settings)
     ├── shell/           Zephyr shell commands (dmx, net, ui, backlight)
     └── ui/assets/       LVGL fonts (Free Mono Bold 24/48, Oswald Regular 36)
 
@@ -34,10 +36,67 @@ module/                  Out-of-tree Zephyr module
 └── include/             Public driver API headers
 ```
 
+### UI tabs
+
+| Index | Tab | Content |
+|-------|-----|---------|
+| 0 | Overview (Übersicht) | Day acts (from Directus) |
+| 1 | Pager | Placeholder |
+| 2 | Light (Lichtsteuerung) | DMX moving-head control (colour grid, dimmer) |
+| 3 | Alarm (Alarmanlage) | Placeholder |
+| 4 | Settings (Einstellungen) | Backlight / settings |
+
+A right-hand sidebar shows the current time/date and the tab buttons.
+
+### Network
+
+Ethernet (EMAC + TLK110 PHY) is currently **disabled in the board DTS** due to
+an EMAC/LVGL conflict on this pre-v3 silicon. The network stack is still
+compiled so the backend threads build, and they stay dormant until
+`net_is_up()` reports a preferred IPv4 address.
+
+- Static IPv4 `192.168.2.130/24`, gateway `192.168.2.1` (`prj.conf`, DHCP
+  disabled).
+- `net_init()` registers a net-mgmt watcher for `NET_EVENT_IPV4_ADDR_ADD/DEL`
+  and flips `net_is_up()`.
+
+### Backend threads
+
+Three threads start after `net_init()` and each block internally on
+`net_is_up()`:
+
+| Thread | Priority | Purpose |
+|--------|----------|---------|
+| NTP | 6 | SNTP time sync, CET/CEST conversion, periodic re-sync (10 min) |
+| MQTT | 5 | DMX publisher + lamp control (`node-red/...`) |
+| Directus | 4 | Fetches the day's acts over HTTPS |
+
+The main thread runs the LVGL event loop at ~200 Hz (5 ms tick) plus a 1 s
+timer for the clock/overview refresh.
+
+## MQTT
+
+The HMI is a pure publisher (never subscribes). Broker is `192.168.2.128:1883`
+(anonymous), client ID `bar-dashboard`.
+
+| Topic | Payload | Purpose |
+|-------|---------|---------|
+| `dmx/mh/<addr>/color` | 0..255 | Moving-head colour wheel |
+| `dmx/mh/<addr>/dimmer` | 0..255 | Dimmer |
+| `dmx/mh/<addr>/pan` | 0..540 | Pan |
+| `dmx/mh/<addr>/tilt` | 0..200 | Tilt |
+| `dmx/mh/<addr>/strobe` | 0..255 | Strobe |
+| `dmx/mh/<addr>/home` | — | Home position |
+| `dmx/mh/<addr>/blackout` | — | Blackout |
+| `dmx/fixture/<addr>` | 0/255 | Relay fixture on/off |
+| `dmx/addr` | 1..504 | DMX start address |
+| `node-red/lamp/power/set` | `ON`/`OFF` | Lamp power |
+| `node-red/lamp/brightness/set` | 0..100 | Lamp brightness |
+
 ## SD Card Configuration
 
-Configuration is loaded from the FAT32 SD card at boot. All files are JSON
-and optional — built-in defaults are used when a file is absent.
+Configuration is loaded from the FAT32 SD card at boot (`/SD:`). All files are
+JSON and optional — built-in defaults are used when a file is absent.
 
 ### `/SD:/bar_dashboard.json`
 
@@ -62,7 +121,7 @@ and optional — built-in defaults are used when a file is absent.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `device_name` | string | `bar-dashboard` | Device identifier |
-| `mqtt_server_ip` | string | `192.168.2.128` | MQTT broker IP (preferred over domain) |
+| `mqtt_server_ip` | string | `192.168.2.128` | MQTT broker IP |
 | `mqtt_server_domain` | string | `mqtt.moai.sk` | MQTT broker hostname |
 | `mqtt_server_port` | number | `1883` | MQTT broker port |
 | `directus_server_ip` | string | `192.168.2.128` | Directus CMS IP |
@@ -103,6 +162,30 @@ Written by the firmware when the backlight slider is moved. Read at boot.
 |---|---|---|---|
 | `backlight` | number | `100` | LCD backlight brightness (0–100 %) |
 
+## Startup & system dependencies
+
+Boot order in `src/main.c`:
+
+| # | Step | Depends on |
+|---|------|-----------|
+| 1 | MIPI-DSI display init + LVGL rotation (270°) | on-board panel |
+| 2 | `init_config()` + `settings_load()` + `settings_apply_backlight()` | SD card (optional; compiled defaults otherwise) |
+| 3 | `ui_init_and_build()` — LVGL dashboard | display |
+| 4 | `display_blanking_off()` | panel-ctl driver |
+| 5 | `net_init()` — Ethernet EMAC watcher | network link (static IP, DHCP disabled) |
+| 6 | NTP thread (prio 6) — time sync | NTP servers (`192.53.103.108/104/103:123`) |
+| 7 | MQTT thread (prio 5) — publishes DMX/lamp topics | MQTT broker `192.168.2.128:1883` (anonymous) |
+| 8 | Directus thread (prio 4) — fetches event schedule | Directus CMS `directus.moai.sk:443` (HTTPS, bearer token) |
+| 9 | LVGL event loop (main thread, ~200 Hz) | display + all backends |
+
+**Key external dependencies**:
+- **MQTT broker** `192.168.2.128:1883` (mosquitto, anonymous). The HMI is a
+  pure publisher.
+- **Directus CMS** at `directus.moai.sk` (HTTPS 443, bearer token from
+  `creds.json`) for the daily event schedule. TLS verification is disabled
+  (matching the Arduino reference).
+- **NTP** for wall-clock time / date on the dashboard sidebar.
+
 ## Build
 
 Requires a Zephyr workspace at `~/zephyrproject`.
@@ -112,7 +195,7 @@ source ~/zephyrproject/.venv/bin/activate
 west blobs fetch hal_espressif
 
 west build --board waveshare_esp32p4_nano/esp32p4/hpcore \
-           --build-dir build-nano club-display
+           --build-dir build-nano club-hmi
 
 west flash --build-dir build-nano --esp-device /dev/ttyACM0
 ```
@@ -120,17 +203,18 @@ west flash --build-dir build-nano --esp-device /dev/ttyACM0
 ## Shell commands
 
 ```
-dmx color <name|0..255>   DMX colour wheel
-dmx dimmer <0..255>       DMX dimmer
-dmx blackout              Blackout
-dmx home                  Home position
+dmx color <name|0..255>    DMX colour wheel (white red orange yellow green blue cyan purple)
+dmx dimmer <0..255>        DMX dimmer
+dmx blackout               Blackout
+dmx home                   Home position
+dmx fixture <on|off>       Relay fixture (address 19)
 
-backlight <0..100>        LCD backlight percentage
+backlight <0..100>         LCD backlight percentage
 
-net status                Show network status
+net status                 Show network status
 
 ui tab <overview|pager|light|alarm|settings>
-ui alarm <on|off>         Blink alarm tab button
+ui alarm <on|off>          Blink alarm tab button
 ```
 
 ## License

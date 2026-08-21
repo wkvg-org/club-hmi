@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
  * App-facing API for the ESP32-P4 DSI DPI display driver.

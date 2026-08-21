@@ -1,4 +1,4 @@
-name: club_display_hw
+name: club_hmi_hw
 build:
   cmake: .
   kconfig: Kconfig

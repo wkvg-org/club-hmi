@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
  * Persisted device settings (backlight brightness), stored as JSON on

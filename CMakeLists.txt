@@ -1,7 +1,7 @@
 # Copyright (c) 2025-2026 Wolfenbütteler Kultur- und Veranstaltungsgesellschaft gemeinnützige UG (haftungsbeschränkt)
 # SPDX-License-Identifier: Apache-2.0
 #
-# club-display: bar-dashboard application for the Waveshare ESP32-P4-NANO
+# club-hmi: bar-dashboard application for the Waveshare ESP32-P4-NANO
 # 10.1" MIPI-DSI panel. See PLAN.md for the full design.
 #
 # The out-of-tree board (waveshare_esp32p4_nano), devicetree bindings and
@@ -13,7 +13,7 @@ cmake_minimum_required(VERSION 3.20.0)
 list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/module)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(club_display)
+project(club_hmi)
 
 target_sources(app PRIVATE src/main.c)
 

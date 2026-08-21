@@ -1,8 +1,8 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
  *
- * DMX colour tab: a grid of named-colour buttons that send DMX colour-
- * wheel commands over UDP to the club-ctrl moving-head controller.
+ * DMX tab: colour picker, dimmer, strobe, joystick pan/tilt,
+ * blackout/home buttons, and DMX start address selector.
  */
 
 #ifndef UI_TAB_DMX_H_

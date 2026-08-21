@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
  * DSI DPI framebuffer scan-out driver for the Espressif ESP32-P4.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
  * MQTT client — connects to the broker (192.168.2.128:1883) and
@@ -52,7 +52,6 @@ static struct sockaddr_in g_broker_addr;
 static struct mqtt_utf8   g_client_id;
 static bool               g_connected;
 
-static char    g_publish_buf[64];
 static uint8_t g_mqtt_rx_buf[512];
 static uint8_t g_mqtt_tx_buf[512];
 
@@ -86,6 +85,7 @@ static void mqtt_do_connect(void)
 	g_client.evt_cb           = mqtt_evt_handler;
 	g_client.user_name        = NULL;  /* anonymous */
 	g_client.password         = NULL;
+	g_client.transport.type   = MQTT_TRANSPORT_NON_SECURE;
 	g_client.protocol_version = MQTT_VERSION_3_1_1;
 	g_client.keepalive        = MQTT_KEEPALIVE;
 	g_client.clean_session    = 1;
@@ -112,7 +112,7 @@ static void mqtt_do_connect(void)
 
 /* ── Publish a message (QoS 0) ──────────────────────────────────────── */
 
-static void mqtt_do_publish(const char *topic, const char *payload)
+static void mqtt_do_publish_str(const char *topic, const char *payload)
 {
 	if (!g_connected) {
 		return;
@@ -140,13 +140,20 @@ static void mqtt_do_publish(const char *topic, const char *payload)
 	}
 }
 
+static void mqtt_do_publish_u(const char *topic, unsigned int val)
+{
+	char buf[16];
+	snprintf(buf, sizeof(buf), "%u", val);
+	mqtt_do_publish_str(topic, buf);
+}
+
 /* ── Public API ─────────────────────────────────────────────────────── */
 
 void mqtt_lamp_set_power(bool on)
 {
 	const char *payload = on ? "ON" : "OFF";
 	LOG_INF("lamp power -> %s", payload);
-	mqtt_do_publish(TOPIC_LAMP_POWER, payload);
+	mqtt_do_publish_str(TOPIC_LAMP_POWER, payload);
 }
 
 void mqtt_lamp_set_brightness(uint8_t brightness)
@@ -154,54 +161,82 @@ void mqtt_lamp_set_brightness(uint8_t brightness)
 	if (brightness > 100) {
 		brightness = 100;
 	}
-	snprintf(g_publish_buf, sizeof(g_publish_buf), "%u", brightness);
-	LOG_INF("lamp brightness -> %s", g_publish_buf);
-	mqtt_do_publish(TOPIC_LAMP_BRIGHTNESS, g_publish_buf);
+	LOG_INF("lamp brightness -> %u", brightness);
+	mqtt_do_publish_u(TOPIC_LAMP_BRIGHTNESS, brightness);
 }
 
 void mqtt_pub(const char *topic, const char *payload)
 {
-	mqtt_do_publish(topic, payload);
+	mqtt_do_publish_str(topic, payload);
 }
 
-void mqtt_dmx_color(uint8_t val)
+void mqtt_dmx_color(uint8_t addr, uint8_t val)
 {
-	snprintf(g_publish_buf, sizeof(g_publish_buf), "%u", val);
-	mqtt_do_publish("dmx/color", g_publish_buf);
+	char topic[32];
+
+	snprintf(topic, sizeof(topic), "dmx/mh/%u/color", addr);
+	mqtt_do_publish_u(topic, val);
 }
 
-void mqtt_dmx_dimmer(uint8_t val)
+void mqtt_dmx_dimmer(uint8_t addr, uint8_t val)
 {
-	snprintf(g_publish_buf, sizeof(g_publish_buf), "%u", val);
-	mqtt_do_publish("dmx/dimmer", g_publish_buf);
+	char topic[32];
+
+	snprintf(topic, sizeof(topic), "dmx/mh/%u/dimmer", addr);
+	mqtt_do_publish_u(topic, val);
 }
 
-void mqtt_dmx_pan(uint16_t deg)
+void mqtt_dmx_pan(uint8_t addr, uint16_t deg)
 {
-	snprintf(g_publish_buf, sizeof(g_publish_buf), "%u", deg);
-	mqtt_do_publish("dmx/pan", g_publish_buf);
+	char topic[32];
+
+	snprintf(topic, sizeof(topic), "dmx/mh/%u/pan", addr);
+	mqtt_do_publish_u(topic, deg);
 }
 
-void mqtt_dmx_tilt(uint8_t deg)
+void mqtt_dmx_tilt(uint8_t addr, uint8_t deg)
 {
-	snprintf(g_publish_buf, sizeof(g_publish_buf), "%u", deg);
-	mqtt_do_publish("dmx/tilt", g_publish_buf);
+	char topic[32];
+
+	snprintf(topic, sizeof(topic), "dmx/mh/%u/tilt", addr);
+	mqtt_do_publish_u(topic, deg);
 }
 
-void mqtt_dmx_strobe(uint8_t val)
+void mqtt_dmx_strobe(uint8_t addr, uint8_t val)
 {
-	snprintf(g_publish_buf, sizeof(g_publish_buf), "%u", val);
-	mqtt_do_publish("dmx/strobe", g_publish_buf);
+	char topic[32];
+
+	snprintf(topic, sizeof(topic), "dmx/mh/%u/strobe", addr);
+	mqtt_do_publish_u(topic, val);
 }
 
-void mqtt_dmx_home(void)
+void mqtt_dmx_home(uint8_t addr)
 {
-	mqtt_do_publish("dmx/home", "");
+	char topic[32];
+
+	snprintf(topic, sizeof(topic), "dmx/mh/%u/home", addr);
+	mqtt_do_publish_str(topic, "");
 }
 
-void mqtt_dmx_blackout(void)
+void mqtt_dmx_blackout(uint8_t addr)
 {
-	mqtt_do_publish("dmx/blackout", "");
+	char topic[32];
+
+	snprintf(topic, sizeof(topic), "dmx/mh/%u/blackout", addr);
+	mqtt_do_publish_str(topic, "");
+}
+
+void mqtt_dmx_addr(uint16_t addr)
+{
+	mqtt_do_publish_u("dmx/addr", addr);
+}
+
+void mqtt_dmx_fixture(uint8_t addr, uint8_t val)
+{
+	char topic[32];
+
+	snprintf(topic, sizeof(topic), "dmx/fixture/%u", addr);
+	mqtt_do_publish_u(topic, val);
 }
 
 /* ── Service thread (connect / keep-alive / reconnect) ──────────────── */
@@ -209,39 +244,33 @@ void mqtt_dmx_blackout(void)
 static void forward_dmx_cmd(const struct dmx_cmd *cmd)
 {
 	switch (cmd->type) {
-	case DMX_CMD_COLOR:    mqtt_dmx_color(cmd->val);            break;
-	case DMX_CMD_DIMMER:   mqtt_dmx_dimmer((uint8_t)cmd->val);  break;
+	case DMX_CMD_COLOR:    mqtt_dmx_color(cmd->addr, (uint8_t)cmd->val);    break;
+	case DMX_CMD_DIMMER:   mqtt_dmx_dimmer(cmd->addr, (uint8_t)cmd->val);   break;
 	case DMX_CMD_PANTILT:
-		mqtt_dmx_pan(cmd->val);
-		mqtt_dmx_tilt(cmd->extra);
+		mqtt_dmx_pan(cmd->addr, cmd->val);
+		mqtt_dmx_tilt(cmd->addr, cmd->extra);
 		break;
-	case DMX_CMD_STROBE:   mqtt_dmx_strobe((uint8_t)cmd->val);  break;
-	case DMX_CMD_HOME:     mqtt_dmx_home();                     break;
-	case DMX_CMD_BLACKOUT: mqtt_dmx_blackout();                 break;
+	case DMX_CMD_STROBE:   mqtt_dmx_strobe(cmd->addr, (uint8_t)cmd->val);   break;
+	case DMX_CMD_HOME:     mqtt_dmx_home(cmd->addr);                        break;
+	case DMX_CMD_BLACKOUT: mqtt_dmx_blackout(cmd->addr);                    break;
+	case DMX_CMD_ADDR:     mqtt_dmx_addr(cmd->val);                         break;
+	case DMX_CMD_FIXTURE:  mqtt_dmx_fixture(cmd->addr, cmd->extra);         break;
 	}
 }
 
 void mqtt_service(void)
 {
 	struct pollfd fds[1];
-	struct dmx_cmd cmd;
 
 	LOG_INF("mqtt service started");
 
 	while (1) {
-		int drained = 0;
-		while (drained < 4 && k_msgq_get(&dmx_msgq, &cmd, K_NO_WAIT) == 0) {
-			forward_dmx_cmd(&cmd);
-			drained++;
-		}
-
 		if (!net_is_up()) {
 			k_sleep(K_MSEC(100));
 			continue;
 		}
 
 		if (!g_connected) {
-			/* Connect and wait for CONNACK */
 			mqtt_do_connect();
 			if (g_client.transport.tcp.sock >= 0) {
 				int64_t deadline = k_uptime_get() + MQTT_CONNECT_TIMEOUT_MS;
@@ -257,19 +286,37 @@ void mqtt_service(void)
 				mqtt_abort(&g_client);
 				LOG_WRN("MQTT connect timed out");
 			}
+			/* Drain any stale zbus messages that arrived during
+			 * the connection attempt so they do not clog the
+			 * subscriber queue. */
+			const struct zbus_channel *chan;
+			while (zbus_sub_wait(&dmx_sub, &chan, K_NO_WAIT) == 0) {
+				struct dmx_cmd cmd;
+				zbus_chan_read(&dmx_chan, &cmd, K_NO_WAIT);
+				forward_dmx_cmd(&cmd);
+			}
 			k_sleep(K_SECONDS(5));
-		} else {
-			/* Connected: poll for incoming data and run keep-alive */
-			fds[0].fd     = g_client.transport.tcp.sock;
-			fds[0].events = POLLIN;
-			if (poll(fds, 1, 1000) > 0) {
-				mqtt_input(&g_client);
-			}
-			int ret = mqtt_live(&g_client);
-			if (ret < 0 && ret != -EAGAIN) {
-				LOG_WRN("MQTT connection lost");
-				g_connected = false;
-			}
+			continue;
+		}
+
+		/* Connected: drain pending DMX commands and publish them */
+		const struct zbus_channel *chan;
+		while (zbus_sub_wait(&dmx_sub, &chan, K_NO_WAIT) == 0) {
+			struct dmx_cmd cmd;
+			zbus_chan_read(&dmx_chan, &cmd, K_NO_WAIT);
+			forward_dmx_cmd(&cmd);
+		}
+
+		/* Poll for incoming MQTT data and keep-alive */
+		fds[0].fd     = g_client.transport.tcp.sock;
+		fds[0].events = POLLIN;
+		if (poll(fds, 1, 1000) > 0) {
+			mqtt_input(&g_client);
+		}
+		int ret = mqtt_live(&g_client);
+		if (ret < 0 && ret != -EAGAIN) {
+			LOG_WRN("MQTT connection lost");
+			g_connected = false;
 		}
 		k_sleep(K_MSEC(10));
 	}

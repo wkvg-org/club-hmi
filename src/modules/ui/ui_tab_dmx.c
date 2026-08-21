@@ -1,22 +1,22 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
- * DMX tab — colour picker, dimmer, blackout/home, joystick, DMX address.
+ * DMX tab — colour picker, dimmer, blackout/home, pan/tilt, fixture.
  *
  * Layout:
- *   ┌─────────────┬─────────────┐
- *   │  Joystick   │ Color Picker│
- *   │  Pan/Tilt   │ W R O Y     │
- *   │             │ G C B P     │
- *   ├─────────────┴─────────────┤
- *   │ Dim: [==slider==] [BLK] [Home] │
- *   │ Addr: [-] 1 [+]              │
+ *   ┌───────────────────────────────┐
+ *   │  [MH 1]  [MH 2]   (selector) │
+ *   ├──────────┬───┬───────────────┤
+ *   │ Pan Arc  │Tlt│ Color Picker  │
+ *   │ (circle) │ ↑ │ W R O Y       │
+ *   │          │   │ G C B P       │
+ *   ├──────────┴───┴───────────────┤
+ *   │ Dim/Str  [BLK] [Home] [Fix]  │
  *   └──────────────────────────────┘
  */
 
 #include "ui_tab_dmx.h"
-#include "../net/color_mqtt.h"
 #include "../net/dmx_zbus.h"
 
 #include <stdio.h>
@@ -29,18 +29,21 @@
 
 LOG_MODULE_REGISTER(ui_dmx, LOG_LEVEL_INF);
 
-#define JOY_THROTTLE_MS 50
+#define MH_ADDR_1     1
+#define MH_ADDR_2     10
+#define FIXTURE_ADDR  19
 
 static uint16_t g_pan_deg  = 270;
 static uint8_t  g_tilt_deg = 100;
-static uint16_t g_dmx_addr = 1;
+static uint8_t  g_mh_addr  = MH_ADDR_1;
 static uint8_t  g_color = 5, g_dimmer = 100, g_strobe;
+static bool     g_fixture_on;
 
-static lv_obj_t *g_joy_thumb;
-static lv_obj_t *g_joy_label;
-static lv_obj_t *g_addr_label;
+static lv_obj_t *g_pantilt_label;
 static lv_obj_t *g_color_label;
-static int64_t  g_joy_last_ms;
+static lv_obj_t *g_fixture_btn;
+static lv_obj_t *g_mh1_btn;
+static lv_obj_t *g_mh2_btn;
 
 struct color_preset {
 	const char *name;
@@ -62,8 +65,32 @@ static const struct color_preset color_presets[] = {
 
 static void dmx_pub(uint8_t type, uint16_t val)
 {
-	struct dmx_cmd cmd = { .type = type, .val = val };
-	k_msgq_put(&dmx_msgq, &cmd, K_NO_WAIT);
+	struct dmx_cmd cmd = { .type = type, .addr = g_mh_addr, .val = val };
+	zbus_chan_pub(&dmx_chan, &cmd, K_NO_WAIT);
+}
+
+static void send_pantilt_cmd(void)
+{
+	struct dmx_cmd cmd = { .type = DMX_CMD_PANTILT, .addr = g_mh_addr,
+			       .val = g_pan_deg, .extra = g_tilt_deg };
+	zbus_chan_pub(&dmx_chan, &cmd, K_NO_WAIT);
+}
+
+static void update_pantilt_label(void)
+{
+	char buf[40];
+	snprintf(buf, sizeof(buf), "MH%u Pan:%u Tilt:%u",
+		 g_mh_addr == MH_ADDR_1 ? 1 : 2, g_pan_deg, g_tilt_deg);
+	lv_label_set_text(g_pantilt_label, buf);
+}
+
+static void update_mh_selector_style(void)
+{
+	lv_color_t sel = lv_color_hex(0x005588);
+	lv_color_t unsel = lv_color_hex(0x333333);
+
+	lv_obj_set_style_bg_color(g_mh1_btn, g_mh_addr == MH_ADDR_1 ? sel : unsel, 0);
+	lv_obj_set_style_bg_color(g_mh2_btn, g_mh_addr == MH_ADDR_2 ? sel : unsel, 0);
 }
 
 /* ── Event handlers ─────────────────────────────────────────────────── */
@@ -72,16 +99,65 @@ static void on_blackout(lv_event_t *e)
 {
 	ARG_UNUSED(e);
 	dmx_pub(DMX_CMD_BLACKOUT, 0);
-	LOG_INF("blackout");
+	LOG_INF("blackout MH%u", g_mh_addr == MH_ADDR_1 ? 1 : 2);
 }
 
 static void on_home(lv_event_t *e)
 {
 	ARG_UNUSED(e);
 	g_pan_deg = 270; g_tilt_deg = 100;
-	dmx_pub(DMX_CMD_HOME, 0);
-	lv_obj_set_pos(g_joy_thumb, 0, 0);
-	LOG_INF("home");
+	send_pantilt_cmd();
+	update_pantilt_label();
+	LOG_INF("home MH%u", g_mh_addr == MH_ADDR_1 ? 1 : 2);
+}
+
+static void on_fixture_toggle(lv_event_t *e)
+{
+	ARG_UNUSED(e);
+	g_fixture_on = !g_fixture_on;
+
+	struct dmx_cmd cmd = {
+		.type  = DMX_CMD_FIXTURE,
+		.addr  = FIXTURE_ADDR,
+		.extra = g_fixture_on ? 255 : 0,
+	};
+	zbus_chan_pub(&dmx_chan, &cmd, K_NO_WAIT);
+
+	lv_obj_set_style_bg_color(g_fixture_btn,
+				  g_fixture_on ? lv_color_hex(0x005500) : lv_color_hex(0x444444), 0);
+	LOG_INF("fixture %s (addr %u)", g_fixture_on ? "on" : "off", FIXTURE_ADDR);
+}
+
+static void on_mh1(lv_event_t *e)
+{
+	ARG_UNUSED(e);
+	g_mh_addr = MH_ADDR_1;
+	update_mh_selector_style();
+	update_pantilt_label();
+	LOG_INF("select MH1");
+}
+
+static void on_mh2(lv_event_t *e)
+{
+	ARG_UNUSED(e);
+	g_mh_addr = MH_ADDR_2;
+	update_mh_selector_style();
+	update_pantilt_label();
+	LOG_INF("select MH2");
+}
+
+static void on_pan_change(lv_event_t *e)
+{
+	g_pan_deg = (uint16_t)lv_arc_get_value(lv_event_get_target(e));
+	send_pantilt_cmd();
+	update_pantilt_label();
+}
+
+static void on_tilt_change(lv_event_t *e)
+{
+	g_tilt_deg = 200 - (uint8_t)lv_slider_get_value(lv_event_get_target(e));
+	send_pantilt_cmd();
+	update_pantilt_label();
 }
 
 /* ── DMX controls ──────────────────────────────────────────────────── */
@@ -119,7 +195,8 @@ static void on_color_btn(lv_event_t *e)
 }
 
 static lv_obj_t *make_slider(lv_obj_t *parent, const char *name,
-			      lv_color_t color, uint8_t val, struct slider_ctx *ctx)
+			      lv_color_t color, int32_t min, int32_t max, int32_t val,
+			      lv_event_cb_t cb, void *user_data)
 {
 	lv_obj_t *row = lv_obj_create(parent);
 	lv_obj_set_size(row, LV_PCT(100), 40);
@@ -138,10 +215,10 @@ static lv_obj_t *make_slider(lv_obj_t *parent, const char *name,
 	lv_obj_set_width(lbl, 64);
 
 	lv_obj_t *sl = lv_slider_create(row);
-	lv_slider_set_range(sl, 0, 255);
+	lv_slider_set_range(sl, min, max);
 	lv_slider_set_value(sl, val, LV_ANIM_OFF);
 	lv_obj_set_flex_grow(sl, 1);
-	lv_obj_add_event_cb(sl, on_dmx_slider, LV_EVENT_VALUE_CHANGED, ctx);
+	lv_obj_add_event_cb(sl, cb, LV_EVENT_VALUE_CHANGED, user_data);
 
 	return row;
 }
@@ -157,7 +234,6 @@ static void build_color_mixer(lv_obj_t *parent)
 	lv_obj_set_layout(col, LV_LAYOUT_FLEX);
 	lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
 
-	/* Color button grid */
 	lv_obj_t *grid = lv_obj_create(col);
 	lv_obj_set_size(grid, LV_PCT(100), LV_SIZE_CONTENT);
 	lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, 0);
@@ -184,7 +260,7 @@ static void build_color_mixer(lv_obj_t *parent)
 
 		lv_obj_t *lbl = lv_label_create(btn);
 		lv_label_set_text(lbl, color_presets[i].name);
-		lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
+		lv_obj_set_style_text_color(lbl, (i == 0 || i == 3 || i == 5) ? lv_color_black() : lv_color_white(), 0);
 		lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
 		lv_obj_center(lbl);
 
@@ -192,160 +268,84 @@ static void build_color_mixer(lv_obj_t *parent)
 				    (void *)&color_presets[i]);
 	}
 
-	make_slider(col, "Dim", lv_color_hex(0xFFFFFF), 0, &ctx_dimmer);
-	make_slider(col, "Str", lv_color_hex(0x888888), 0,   &ctx_strobe);
+	make_slider(col, "Dim", lv_color_hex(0xFFFFFF), 0, 255, 0, on_dmx_slider, &ctx_dimmer);
+	make_slider(col, "Str", lv_color_hex(0x888888), 0, 255, 0, on_dmx_slider, &ctx_strobe);
 	lv_obj_set_style_margin_top(lv_obj_get_child(col, lv_obj_get_child_count(col) - 1), 8, 0);
 }
 
-/* ── Joystick ───────────────────────────────────────────────────────── */
+/* ── Pan arc + Tilt slider ──────────────────────────────────────────── */
 
-static void update_joy_label(void)
+static void build_pan_arc(lv_obj_t *parent)
 {
-	char buf[32];
-	snprintf(buf, sizeof(buf), "Pan:%u Tilt:%u", g_pan_deg, g_tilt_deg);
-	lv_label_set_text(g_joy_label, buf);
+	lv_obj_t *arc = lv_arc_create(parent);
+	lv_obj_set_size(arc, 180, 180);
+	lv_obj_add_flag(arc, LV_OBJ_FLAG_CLICKABLE);
+	lv_arc_set_range(arc, 0, 360);
+	lv_arc_set_value(arc, g_pan_deg);
+	lv_arc_set_rotation(arc, 135);
+	lv_arc_set_bg_angles(arc, 0, 270);
+	lv_obj_set_style_arc_color(arc, lv_color_hex(0x0099ff), LV_PART_INDICATOR);
+	lv_obj_set_style_arc_color(arc, lv_color_hex(0x333333), LV_PART_MAIN);
+	lv_obj_set_style_arc_width(arc, 12, LV_PART_MAIN);
+	lv_obj_set_style_arc_width(arc, 12, LV_PART_INDICATOR);
+	lv_obj_set_style_bg_color(arc, lv_color_hex(0xffffff), LV_PART_KNOB);
+	lv_obj_set_style_bg_opa(arc, LV_OPA_COVER, LV_PART_KNOB);
+	lv_obj_set_style_pad_all(arc, 12, LV_PART_KNOB);
+	lv_obj_add_event_cb(arc, on_pan_change, LV_EVENT_VALUE_CHANGED, NULL);
+	lv_obj_add_event_cb(arc, on_pan_change, LV_EVENT_PRESSING, NULL);
 }
 
-static void send_joy_cmd(void)
+static void build_tilt_slider(lv_obj_t *parent)
 {
-	int64_t now = k_uptime_get();
-	if (now - g_joy_last_ms < JOY_THROTTLE_MS) return;
-	g_joy_last_ms = now;
-
-	struct dmx_cmd cmd = { .type = DMX_CMD_PANTILT, .val = g_pan_deg, .extra = g_tilt_deg };
-	k_msgq_put(&dmx_msgq, &cmd, K_NO_WAIT);
+	lv_obj_t *sl = lv_slider_create(parent);
+	lv_obj_set_size(sl, 24, LV_PCT(100));
+	lv_slider_set_range(sl, 0, 200);
+	lv_slider_set_value(sl, 200 - g_tilt_deg, LV_ANIM_OFF);
+	lv_obj_set_style_bg_color(sl, lv_color_hex(0x0099ff), LV_PART_INDICATOR);
+	lv_obj_set_style_pad_all(sl, 4, LV_PART_KNOB);
+	lv_obj_add_event_cb(sl, on_tilt_change, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
-static void on_joy_pressing(lv_event_t *e)
+/* ── Moving-head selector ───────────────────────────────────────────── */
+
+static void build_mh_selector(lv_obj_t *parent)
 {
-	static bool in_handler;
-	if (in_handler) return;
-	in_handler = true;
-
-	lv_obj_t *joy = lv_event_get_target(e);
-	lv_indev_t *indev = lv_indev_active();
-	lv_point_t p;
-	lv_indev_get_point(indev, &p);
-
-	lv_area_t a;
-	lv_obj_get_coords(joy, &a);
-	lv_coord_t rx = p.x - a.x1, ry = p.y - a.y1;
-	lv_coord_t jw = lv_obj_get_content_width(joy);
-	lv_coord_t jh = lv_obj_get_content_height(joy);
-	lv_coord_t tw = lv_obj_get_width(g_joy_thumb);
-	lv_coord_t th = lv_obj_get_height(g_joy_thumb);
-	lv_coord_t rw = (jw > tw) ? (jw - tw) : 1;
-	lv_coord_t rh = (jh > th) ? (jh - th) : 1;
-
-	if (rx < 0) rx = 0; else if (rx > rw) rx = rw;
-	if (ry < 0) ry = 0; else if (ry > rh) ry = rh;
-
-	lv_obj_set_pos(g_joy_thumb, rx, ry);
-	g_pan_deg  = 540u - (uint16_t)((uint32_t)rx * 540u / (uint32_t)rw);
-	g_tilt_deg = (uint8_t)((uint32_t)ry * 200u / (uint32_t)rh);
-	send_joy_cmd();
-	update_joy_label();
-
-	in_handler = false;
-}
-
-static void build_joystick(lv_obj_t *parent)
-{
-	lv_obj_t *joy = lv_obj_create(parent);
-	lv_obj_set_size(joy, LV_PCT(100), LV_PCT(75));
-	lv_obj_set_style_bg_color(joy, lv_color_hex(0x222222), 0);
-	lv_obj_set_style_bg_opa(joy, LV_OPA_COVER, 0);
-	lv_obj_set_style_border_color(joy, lv_color_hex(0x666666), 0);
-	lv_obj_set_style_border_width(joy, 2, 0);
-	lv_obj_set_style_radius(joy, 8, 0);
-	lv_obj_set_scrollbar_mode(joy, LV_SCROLLBAR_MODE_OFF);
-
-	g_joy_thumb = lv_obj_create(joy);
-	lv_obj_set_size(g_joy_thumb, 40, 40);
-	lv_obj_set_style_bg_color(g_joy_thumb, lv_color_hex(0x0099ff), 0);
-	lv_obj_set_style_bg_opa(g_joy_thumb, LV_OPA_COVER, 0);
-	lv_obj_set_style_radius(g_joy_thumb, LV_RADIUS_CIRCLE, 0);
-	lv_obj_set_style_border_width(g_joy_thumb, 0, 0);
-
-	lv_obj_add_event_cb(joy, on_joy_pressing, LV_EVENT_PRESSING, NULL);
-}
-
-/* ── Address selector ───────────────────────────────────────────────── */
-
-static void update_addr_label(void)
-{
-	char buf[16];
-	snprintf(buf, sizeof(buf), "%u", g_dmx_addr);
-	lv_label_set_text(g_addr_label, buf);
-}
-
-static void on_addr_up(lv_event_t *e)
-{
-	ARG_UNUSED(e);
-	if (g_dmx_addr < 504) {
-		g_dmx_addr++;
-		update_addr_label();
-		color_mqtt_set_addr(g_dmx_addr);
-		LOG_INF("dmx addr %u", g_dmx_addr);
-	}
-}
-
-static void on_addr_down(lv_event_t *e)
-{
-	ARG_UNUSED(e);
-	if (g_dmx_addr > 1) {
-		g_dmx_addr--;
-		update_addr_label();
-		color_mqtt_set_addr(g_dmx_addr);
-		LOG_INF("dmx addr %u", g_dmx_addr);
-	}
-}
-
-static void build_addr_selector(lv_obj_t *parent)
-{
-	lv_obj_t *c = lv_obj_create(parent);
-	lv_obj_set_size(c, LV_PCT(100), 48);
-	lv_obj_set_style_bg_opa(c, LV_OPA_TRANSP, 0);
-	lv_obj_set_style_border_width(c, 0, 0);
-	lv_obj_set_style_pad_all(c, 2, 0);
-	lv_obj_set_layout(c, LV_LAYOUT_FLEX);
-	lv_obj_set_flex_flow(c, LV_FLEX_FLOW_ROW);
-	lv_obj_set_flex_align(c, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+	lv_obj_t *row = lv_obj_create(parent);
+	lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+	lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+	lv_obj_set_style_border_width(row, 0, 0);
+	lv_obj_set_style_pad_all(row, 2, 0);
+	lv_obj_set_layout(row, LV_LAYOUT_FLEX);
+	lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
 			      LV_FLEX_ALIGN_CENTER);
 
-	lv_obj_t *lbl = lv_label_create(c);
-	lv_label_set_text(lbl, "Addr:");
+	lv_obj_t *lbl = lv_label_create(row);
+	lv_label_set_text(lbl, "Head:");
 	lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
 	lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
 
-	lv_obj_t *down = lv_btn_create(c);
-	lv_obj_set_size(down, 36, 36);
-	lv_obj_set_style_bg_color(down, lv_color_hex(0x444444), 0);
-	lv_obj_set_style_radius(down, 6, 0);
-	lv_obj_t *dl = lv_label_create(down);
-	lv_label_set_text(dl, "-");
-	lv_obj_set_style_text_color(dl, lv_color_white(), 0);
-	lv_obj_set_style_text_font(dl, &lv_font_montserrat_24, 0);
-	lv_obj_center(dl);
-	lv_obj_add_event_cb(down, on_addr_down, LV_EVENT_CLICKED, NULL);
+	g_mh1_btn = lv_btn_create(row);
+	lv_obj_set_size(g_mh1_btn, 60, 36);
+	lv_obj_set_style_radius(g_mh1_btn, 6, 0);
+	lv_obj_t *m1 = lv_label_create(g_mh1_btn);
+	lv_label_set_text(m1, "MH 1");
+	lv_obj_set_style_text_color(m1, lv_color_white(), 0);
+	lv_obj_set_style_text_font(m1, &lv_font_montserrat_16, 0);
+	lv_obj_center(m1);
+	lv_obj_add_event_cb(g_mh1_btn, on_mh1, LV_EVENT_RELEASED, NULL);
 
-	g_addr_label = lv_label_create(c);
-	lv_label_set_text(g_addr_label, "1");
-	lv_obj_set_style_text_color(g_addr_label, lv_color_white(), 0);
-	lv_obj_set_style_text_font(g_addr_label, &lv_font_montserrat_24, 0);
-	lv_obj_set_width(g_addr_label, 60);
-	lv_obj_set_style_text_align(g_addr_label, LV_TEXT_ALIGN_CENTER, 0);
+	g_mh2_btn = lv_btn_create(row);
+	lv_obj_set_size(g_mh2_btn, 60, 36);
+	lv_obj_set_style_radius(g_mh2_btn, 6, 0);
+	lv_obj_t *m2 = lv_label_create(g_mh2_btn);
+	lv_label_set_text(m2, "MH 2");
+	lv_obj_set_style_text_color(m2, lv_color_white(), 0);
+	lv_obj_set_style_text_font(m2, &lv_font_montserrat_16, 0);
+	lv_obj_center(m2);
+	lv_obj_add_event_cb(g_mh2_btn, on_mh2, LV_EVENT_RELEASED, NULL);
 
-	lv_obj_t *up = lv_btn_create(c);
-	lv_obj_set_size(up, 36, 36);
-	lv_obj_set_style_bg_color(up, lv_color_hex(0x444444), 0);
-	lv_obj_set_style_radius(up, 6, 0);
-	lv_obj_t *ul = lv_label_create(up);
-	lv_label_set_text(ul, "+");
-	lv_obj_set_style_text_color(ul, lv_color_white(), 0);
-	lv_obj_set_style_text_font(ul, &lv_font_montserrat_24, 0);
-	lv_obj_center(ul);
-	lv_obj_add_event_cb(up, on_addr_up, LV_EVENT_CLICKED, NULL);
+	update_mh_selector_style();
 }
 
 /* ── Build the tab ──────────────────────────────────────────────────── */
@@ -360,6 +360,8 @@ lv_obj_t *ui_tab_dmx_create(lv_obj_t *parent)
 	lv_obj_set_layout(page, LV_LAYOUT_FLEX);
 	lv_obj_set_flex_flow(page, LV_FLEX_FLOW_COLUMN);
 
+	build_mh_selector(page);
+
 	lv_obj_t *top = lv_obj_create(page);
 	lv_obj_set_size(top, LV_PCT(100), LV_PCT(65));
 	lv_obj_set_style_bg_opa(top, LV_OPA_TRANSP, 0);
@@ -368,23 +370,52 @@ lv_obj_t *ui_tab_dmx_create(lv_obj_t *parent)
 	lv_obj_set_layout(top, LV_LAYOUT_FLEX);
 	lv_obj_set_flex_flow(top, LV_FLEX_FLOW_ROW);
 
-	lv_obj_t *jcol = lv_obj_create(top);
-	lv_obj_set_flex_grow(jcol, 1);
-	lv_obj_set_height(jcol, LV_PCT(100));
-	lv_obj_set_style_bg_opa(jcol, LV_OPA_TRANSP, 0);
-	lv_obj_set_style_border_width(jcol, 0, 0);
-	lv_obj_set_style_pad_all(jcol, 0, 0);
-	lv_obj_set_layout(jcol, LV_LAYOUT_FLEX);
-	lv_obj_set_flex_flow(jcol, LV_FLEX_FLOW_COLUMN);
-	build_joystick(jcol);
+	/* Left column */
+	lv_obj_t *lcol = lv_obj_create(top);
+	lv_obj_set_flex_grow(lcol, 1);
+	lv_obj_set_height(lcol, LV_PCT(100));
+	lv_obj_set_style_bg_opa(lcol, LV_OPA_TRANSP, 0);
+	lv_obj_set_style_border_width(lcol, 0, 0);
+	lv_obj_set_style_pad_all(lcol, 0, 0);
+	lv_obj_set_layout(lcol, LV_LAYOUT_FLEX);
+	lv_obj_set_flex_flow(lcol, LV_FLEX_FLOW_COLUMN);
 
-	g_joy_label = lv_label_create(jcol);
-	lv_label_set_text(g_joy_label, "Pan:270 Tilt:100");
-	lv_obj_set_style_text_color(g_joy_label, lv_color_white(), 0);
-	lv_obj_set_style_text_font(g_joy_label, &lv_font_montserrat_16, 0);
-	lv_obj_set_style_text_align(g_joy_label, LV_TEXT_ALIGN_CENTER, 0);
-	lv_obj_set_width(g_joy_label, LV_PCT(100));
+	/* Pan arc + vertical tilt slider side-by-side */
+	lv_obj_t *pan_tilt_row = lv_obj_create(lcol);
+	lv_obj_set_size(pan_tilt_row, LV_PCT(100), LV_PCT(85));
+	lv_obj_set_style_bg_opa(pan_tilt_row, LV_OPA_TRANSP, 0);
+	lv_obj_set_style_border_width(pan_tilt_row, 0, 0);
+	lv_obj_set_style_pad_all(pan_tilt_row, 0, 0);
+	lv_obj_set_layout(pan_tilt_row, LV_LAYOUT_FLEX);
+	lv_obj_set_flex_flow(pan_tilt_row, LV_FLEX_FLOW_ROW);
+	lv_obj_set_scrollbar_mode(pan_tilt_row, LV_SCROLLBAR_MODE_OFF);
 
+	lv_obj_t *arc_wrap = lv_obj_create(pan_tilt_row);
+	lv_obj_set_flex_grow(arc_wrap, 3);
+	lv_obj_set_height(arc_wrap, LV_PCT(100));
+	lv_obj_set_style_bg_opa(arc_wrap, LV_OPA_TRANSP, 0);
+	lv_obj_set_style_border_width(arc_wrap, 0, 0);
+	lv_obj_set_style_pad_all(arc_wrap, 8, 0);
+	lv_obj_clear_flag(arc_wrap, LV_OBJ_FLAG_SCROLLABLE);
+	build_pan_arc(arc_wrap);
+
+	lv_obj_t *tilt_wrap = lv_obj_create(pan_tilt_row);
+	lv_obj_set_flex_grow(tilt_wrap, 1);
+	lv_obj_set_height(tilt_wrap, LV_PCT(100));
+	lv_obj_set_style_bg_opa(tilt_wrap, LV_OPA_TRANSP, 0);
+	lv_obj_set_style_border_width(tilt_wrap, 0, 0);
+	lv_obj_set_style_pad_all(tilt_wrap, 8, 0);
+	lv_obj_clear_flag(tilt_wrap, LV_OBJ_FLAG_SCROLLABLE);
+	build_tilt_slider(tilt_wrap);
+
+	g_pantilt_label = lv_label_create(lcol);
+	lv_label_set_text(g_pantilt_label, "MH1 Pan:270 Tilt:100");
+	lv_obj_set_style_text_color(g_pantilt_label, lv_color_white(), 0);
+	lv_obj_set_style_text_font(g_pantilt_label, &lv_font_montserrat_16, 0);
+	lv_obj_set_style_text_align(g_pantilt_label, LV_TEXT_ALIGN_CENTER, 0);
+	lv_obj_set_width(g_pantilt_label, LV_PCT(100));
+
+	/* Right column: color mixer */
 	lv_obj_t *rcol = lv_obj_create(top);
 	lv_obj_set_flex_grow(rcol, 1);
 	lv_obj_set_height(rcol, LV_PCT(100));
@@ -420,7 +451,7 @@ lv_obj_t *ui_tab_dmx_create(lv_obj_t *parent)
 	lv_label_set_text(bl, "BLK");
 	lv_obj_set_style_text_color(bl, lv_color_white(), 0);
 	lv_obj_set_style_text_font(bl, &lv_font_montserrat_16, 0);
-	lv_obj_add_event_cb(blk, on_blackout, LV_EVENT_CLICKED, NULL);
+	lv_obj_add_event_cb(blk, on_blackout, LV_EVENT_RELEASED, NULL);
 
 	lv_obj_t *hm = lv_btn_create(btns);
 	lv_obj_set_style_bg_color(hm, (lv_color_t){80, 80, 80}, 0);
@@ -429,9 +460,16 @@ lv_obj_t *ui_tab_dmx_create(lv_obj_t *parent)
 	lv_label_set_text(hl, "Home");
 	lv_obj_set_style_text_color(hl, lv_color_white(), 0);
 	lv_obj_set_style_text_font(hl, &lv_font_montserrat_16, 0);
-	lv_obj_add_event_cb(hm, on_home, LV_EVENT_CLICKED, NULL);
+	lv_obj_add_event_cb(hm, on_home, LV_EVENT_RELEASED, NULL);
 
-	build_addr_selector(page);
+	g_fixture_btn = lv_btn_create(btns);
+	lv_obj_set_style_bg_color(g_fixture_btn, (lv_color_t){68, 68, 68}, 0);
+	lv_obj_set_style_radius(g_fixture_btn, 6, 0);
+	lv_obj_t *fl = lv_label_create(g_fixture_btn);
+	lv_label_set_text(fl, "Zephyr Fixture");
+	lv_obj_set_style_text_color(fl, lv_color_white(), 0);
+	lv_obj_set_style_text_font(fl, &lv_font_montserrat_16, 0);
+	lv_obj_add_event_cb(g_fixture_btn, on_fixture_toggle, LV_EVENT_RELEASED, NULL);
 
 	return page;
 }

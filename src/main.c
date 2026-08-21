@@ -1,15 +1,15 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
- * club-display — bar-dashboard for the Waveshare ESP32-P4-NANO 10.1"
+ * club-hmi — bar-dashboard for the Waveshare ESP32-P4-NANO 10.1"
  * MIPI-DSI panel (TLK110 Ethernet, GT911 touch, 800x1280 portrait
  * mounted landscape @ 270° rotation).
  *
  * Architecture
  * ============
- * main() initialises the display, DMX UDP sender, settings, and UI,
- * then starts three backend threads (NTP, MQTT, Directus) and enters
+ * main() initialises the display, settings, and UI, then starts
+ * three backend threads (NTP, MQTT, Directus) and enters
  * the LVGL event loop.
  *
  *   ┌──────────┐   ┌─────┐   ┌──────────┐
@@ -38,7 +38,6 @@
 #include <lvgl.h>
 
 #include "modules/config/bar_config.h"
-#include "modules/net/color_mqtt.h"
 #include "modules/net/directus.h"
 #include "modules/net/mqtt.h"
 #include "modules/net/net.h"
@@ -55,7 +54,7 @@ LOG_MODULE_REGISTER(app, LOG_LEVEL_INF);
  */
 static K_THREAD_STACK_DEFINE(ntp_stack,      16384);
 static K_THREAD_STACK_DEFINE(mqtt_stack,     20480);
-static K_THREAD_STACK_DEFINE(directus_stack, 16384);
+static K_THREAD_STACK_DEFINE(directus_stack, 32768);
 static struct k_thread ntp_thread;
 static struct k_thread mqtt_thread;
 static struct k_thread directus_thread;
@@ -81,7 +80,6 @@ int main(void)
 
 	/* Peripherals and UI */
 	init_config();
-	color_mqtt_init();
 	settings_load();
 	settings_apply_backlight();
 	ui_init_and_build();

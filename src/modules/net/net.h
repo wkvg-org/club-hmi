@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
  * Ethernet bring-up, ported from the Arduino bar-dashboard (net.cpp):

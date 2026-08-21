@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
  * Directus CMS backend, ported from the Arduino bar-dashboard
@@ -16,13 +16,15 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/net/http/client.h>
 #include <zephyr/net/socket.h>
+#include <zephyr/posix/arpa/inet.h>
+#include <zephyr/posix/poll.h>
 #include <zephyr/data/json.h>
+#include <errno.h>
 
 #include "../config/bar_config.h"
 #include "directus.h"
+#include "directus_zbus.h"
 #include "net.h"
-#include "../ui/ui.h"
-#include "../ui/ui_globals.h"
 
 LOG_MODULE_REGISTER(directus, LOG_LEVEL_INF);
 
@@ -136,7 +138,11 @@ static bool parse_acts(void)
 	}
 
 	LOG_INF("acts: %u entries", count);
-	ui_set_day_acts(out, count);
+	struct directus_msg msg = { .count = count };
+	for (uint8_t i = 0; i < count; i++) {
+		msg.acts[i] = out[i];
+	}
+	zbus_chan_pub(&directus_chan, &msg, K_NO_WAIT);
 	return count > 0;
 }
 
@@ -155,14 +161,51 @@ bool directus_download_acts(void)
 
 	g_acts_len = 0;
 
+	/*
+	 * Verify the server is reachable before attempting TLS.
+	 * A plain TCP connect avoids the mbedTLS crash path that
+	 * occurs when TLS negotiates against an absent server.
+	 */
+	{
+		int test = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		if (test < 0) {
+			LOG_WRN("directus test socket failed");
+			return false;
+		}
+
+		struct sockaddr_in addr;
+		memset(&addr, 0, sizeof(addr));
+		addr.sin_family = AF_INET;
+		addr.sin_port   = htons(get_directus_port());
+		const char *ip = get_directus_server_ip();
+		if (ip[0] == '\0') {
+			ip = get_directus_server_domain();
+		}
+		inet_pton(AF_INET, ip, &addr.sin_addr);
+
+		struct zsock_pollfd pfd = { .fd = test, .events = ZSOCK_POLLOUT };
+		ret = zsock_connect(test, (struct sockaddr *)&addr, sizeof(addr));
+		if (ret < 0 && errno != EINPROGRESS) {
+			LOG_WRN("directus server %s:%u unreachable: %d", ip,
+				get_directus_port(), errno);
+			zsock_close(test);
+			return false;
+		}
+		ret = zsock_poll(&pfd, 1, 3000);
+		zsock_close(test);
+		if (ret <= 0) {
+			LOG_WRN("directus server %s:%u timeout", ip,
+				get_directus_port());
+			return false;
+		}
+	}
+
 	sock = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TLS_1_2);
 	if (sock < 0) {
 		LOG_WRN("TLS socket failed: %d", errno);
 		return false;
 	}
 
-	/* Insecure mode (like the Arduino's setInsecure()): accept any
-	 * certificate. */
 	int verify = TLS_PEER_VERIFY_NONE;
 
 	ret = zsock_setsockopt(sock, SOL_TLS, TLS_PEER_VERIFY, &verify, sizeof(verify));

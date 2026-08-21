@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
  * MIPI-DSI host driver for the Espressif ESP32-P4.
@@ -20,7 +20,7 @@
  * since it is a logically distinct role even though some of the registers
  * it touches (the DSI bridge bank) overlap with this node's "bridge" reg.
  *
- * See club-display/PLAN.md section 2.3/2.4/4 for the research this is based
+ * See club-hmi/PLAN.md section 2.3/2.4/4 for the research this is based
  * on, including how the DW-GDMA base address and the host/bridge split were
  * derived.
  */
@@ -61,7 +61,7 @@
 LOG_MODULE_REGISTER(dsi_esp32, CONFIG_MIPI_DSI_LOG_LEVEL);
 
 /* Matches the Arduino/ESP-IDF reference implementation for this exact panel
- * (club-display/PLAN.md 2.1/2.4): DPI clock source PLL_F240M, PHY
+ * (club-hmi/PLAN.md 2.1/2.4): DPI clock source PLL_F240M, PHY
  * configuration/PLL-reference clock source PLL_F20M - the SOC_MOD_CLK
  * *_DEFAULT selections for this SoC.
  */

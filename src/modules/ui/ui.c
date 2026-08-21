@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
  * Bar-dashboard UI shell — tab-based layout with a right-hand sidebar
@@ -42,6 +42,7 @@
 #include "ui_tab_dmx.h"
 #include "ui_tab_overview.h"
 #include "ui_tab_settings.h"
+#include "../net/directus_zbus.h"
 
 LOG_MODULE_REGISTER(ui, LOG_LEVEL_INF);
 
@@ -222,6 +223,10 @@ static void refresh_alarm_blink(void)
 static void ui_timer_cb(lv_timer_t *t)
 {
 	(void)t;
+	const struct zbus_channel *chan;
+	while (zbus_sub_wait(&directus_sub, &chan, K_NO_WAIT) == 0) {
+		ui_tab_overview_drain_acts(chan);
+	}
 	time_update_gui_globals();
 	refresh_datetime_labels();
 	ui_tab_overview_refresh();
@@ -331,9 +336,4 @@ void ui_set_datetime(const char *hhmm, const char *ddmmyyyy)
 void ui_set_alarm_notification(bool on)
 {
 	g_alarm_notification = on;
-}
-
-void ui_set_day_acts(const act_t *acts, uint8_t count)
-{
-	ui_tab_overview_set_day_acts(acts, count);
 }

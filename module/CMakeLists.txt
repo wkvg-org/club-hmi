@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# club-display out-of-tree module: ESP32-P4 MIPI-DSI host, DPI/framebuffer
+# club-hmi out-of-tree module: ESP32-P4 MIPI-DSI host, DPI/framebuffer
 # scan-out, JD9365 panel and Waveshare panel-power/backlight drivers.
 
 add_subdirectory(drivers/mipi_dsi)

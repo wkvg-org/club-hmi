@@ -1,9 +1,9 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
  *
- * Zephyr shell commands for the club-display dashboard.
- * Provides serial-console control over the DMX moving head (via the
- * UDP colour client), the LCD backlight, and network status.
+ * Zephyr shell commands for the club-hmi dashboard.
+ * Provides serial-console DMX control via MQTT, LCD backlight,
+ * and network status.
  */
 
 #include <zephyr/shell/shell.h>
@@ -12,7 +12,7 @@
 #include <string.h>
 #include <errno.h>
 
-#include "../net/color_mqtt.h"
+#include "../net/dmx_zbus.h"
 #include "../config/settings.h"
 #include "../net/net.h"
 #include "../ui/ui.h"
@@ -39,11 +39,14 @@ static const struct color_name colors[] = {
 
 static int cmd_dmx_color(const struct shell *sh, size_t argc, char **argv)
 {
+	struct dmx_cmd cmd = { .type = DMX_CMD_COLOR, .addr = 1 };
+
 	/* name lookup */
 	for (size_t i = 0; i < ARRAY_SIZE(colors); i++) {
 		if (strcmp(argv[1], colors[i].name) == 0) {
-			color_mqtt_set_color(colors[i].value);
-			shell_print(sh, "dmx color: %s (%u)",
+		cmd.val = colors[i].value;
+		zbus_chan_pub(&dmx_chan, &cmd, K_NO_WAIT);
+		shell_print(sh, "dmx color: %s (%u)",
 				    colors[i].name, colors[i].value);
 			return 0;
 		}
@@ -58,7 +61,8 @@ static int cmd_dmx_color(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "unknown colour; use name or 0..255");
 		return -EINVAL;
 	}
-	color_mqtt_set_color((uint8_t)v);
+	cmd.val = (uint8_t)v;
+	zbus_chan_pub(&dmx_chan, &cmd, K_NO_WAIT);
 	shell_print(sh, "dmx color: %ld", v);
 	return 0;
 }
@@ -75,7 +79,8 @@ static int cmd_dmx_dimmer(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "dimmer must be 0..255");
 		return -EINVAL;
 	}
-	color_mqtt_set_dimmer((uint8_t)v);
+	struct dmx_cmd cmd = { .type = DMX_CMD_DIMMER, .addr = 1, .val = (uint8_t)v };
+	zbus_chan_pub(&dmx_chan, &cmd, K_NO_WAIT);
 	shell_print(sh, "dmx dimmer: %ld", v);
 	return 0;
 }
@@ -84,15 +89,38 @@ static int cmd_dmx_dimmer(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_dmx_blackout(const struct shell *sh, size_t argc, char **argv)
 {
-	color_mqtt_send("BLACK");
+	struct dmx_cmd cmd = { .type = DMX_CMD_BLACKOUT, .addr = 1 };
+	zbus_chan_pub(&dmx_chan, &cmd, K_NO_WAIT);
 	shell_print(sh, "dmx blackout");
 	return 0;
 }
 
 static int cmd_dmx_home(const struct shell *sh, size_t argc, char **argv)
 {
-	color_mqtt_send("HOME");
+	struct dmx_cmd cmd = { .type = DMX_CMD_HOME, .addr = 1 };
+	zbus_chan_pub(&dmx_chan, &cmd, K_NO_WAIT);
 	shell_print(sh, "dmx home");
+	return 0;
+}
+
+static int cmd_dmx_fixture(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc < 2) {
+		shell_error(sh, "usage: dmx fixture <on|off>");
+		return -EINVAL;
+	}
+	uint8_t val;
+	if (strcmp(argv[1], "on") == 0) {
+		val = 255;
+	} else if (strcmp(argv[1], "off") == 0) {
+		val = 0;
+	} else {
+		shell_error(sh, "use on or off");
+		return -EINVAL;
+	}
+	struct dmx_cmd cmd = { .type = DMX_CMD_FIXTURE, .addr = 19, .extra = val };
+	zbus_chan_pub(&dmx_chan, &cmd, K_NO_WAIT);
+	shell_print(sh, "dmx fixture: %s", argv[1]);
 	return 0;
 }
 
@@ -170,6 +198,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(dmx_subcmds,
 	SHELL_CMD_ARG(dimmer,   NULL, "<0..255>",        cmd_dmx_dimmer,   2, 0),
 	SHELL_CMD(    blackout, NULL, "dimmer=0",        cmd_dmx_blackout),
 	SHELL_CMD(    home,     NULL, "home position",   cmd_dmx_home),
+	SHELL_CMD_ARG(fixture,  NULL, "<on|off>",        cmd_dmx_fixture,  2, 0),
 	SHELL_SUBCMD_SET_END
 );
 

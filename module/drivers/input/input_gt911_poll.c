@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
  * Minimal GT911 touch driver for the Waveshare ESP32-P4-NANO 10.1" DSI

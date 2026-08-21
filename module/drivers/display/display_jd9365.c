@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
  * Jadard JD9365 MIPI-DSI panel driver, for the Waveshare 10.1" DSI touch

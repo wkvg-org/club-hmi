@@ -1,14 +1,14 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
- * Message queue for DMX commands — decouples UI events from MQTT publish.
+ * DMX command channel (zbus) — decouples UI events from MQTT publish.
  */
 
 #ifndef DMX_ZBUS_H_
 #define DMX_ZBUS_H_
 
-#include <zephyr/kernel.h>
+#include <zephyr/zbus/zbus.h>
 #include <stdint.h>
 
 enum dmx_cmd_type {
@@ -18,16 +18,18 @@ enum dmx_cmd_type {
 	DMX_CMD_STROBE,
 	DMX_CMD_HOME,
 	DMX_CMD_BLACKOUT,
+	DMX_CMD_ADDR,
+	DMX_CMD_FIXTURE,
 };
 
 struct dmx_cmd {
 	uint8_t  type;
-	uint16_t val;    /* pan for PANTILT, arg for others */
-	uint8_t  extra;  /* tilt for PANTILT */
+	uint8_t  addr;    /* target DMX address (1/10 for MH, 19 for fixture) */
+	uint16_t val;     /* pan for PANTILT, value for others */
+	uint8_t  extra;   /* tilt for PANTILT, on/off for FIXTURE */
 };
 
-#define DMX_MSGQ_MAX 8
-
-extern struct k_msgq dmx_msgq;
+ZBUS_CHAN_DECLARE(dmx_chan);
+ZBUS_OBS_DECLARE(dmx_sub);
 
 #endif /* DMX_ZBUS_H_ */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 club-display
+ * Copyright (c) 2026 club-hmi
  * SPDX-License-Identifier: Apache-2.0
  *
  * Overview tab ("Meldungen" + "Show Management"), ported from the Arduino
@@ -15,6 +15,7 @@
 
 #include "ui_globals.h"
 #include "ui_tab_overview.h"
+#include "../net/directus_zbus.h"
 
 LOG_MODULE_REGISTER(ui_tab_overview, LOG_LEVEL_INF);
 
@@ -27,6 +28,8 @@ typedef struct {
 static act_row_ui_t g_act_rows[MAX_ACTS] = {0};
 static uint8_t g_act_rows_built = 0;
 
+static act_t  g_acts[MAX_ACTS];
+static uint8_t g_acts_count;
 static lv_style_t st_panel;
 static lv_style_t st_box;
 static lv_style_t st_title;
@@ -309,7 +312,7 @@ lv_obj_t *ui_tab_overview_build(lv_obj_t *parent)
 
 /**
  * Refresh the overview tab once per minute: update act row names and
- * time ranges, show/hide rows based on g_day_acts_count, and highlight
+ * time ranges, show/hide rows based on act count, and highlight
  * the currently active act in green. No-op if no minute tick occurred.
  */
 void ui_tab_overview_refresh(void)
@@ -322,7 +325,7 @@ void ui_tab_overview_refresh(void)
 		return;
 	}
 
-	uint8_t cnt = g_day_acts_count;
+	uint8_t cnt = g_acts_count;
 
 	if (cnt > MAX_ACTS) {
 		cnt = MAX_ACTS;
@@ -335,12 +338,12 @@ void ui_tab_overview_refresh(void)
 
 		if (i < cnt) {
 			lv_obj_remove_flag(g_act_rows[i].row, LV_OBJ_FLAG_HIDDEN);
-			lv_label_set_text(g_act_rows[i].lbl_act, g_day_acts[i].name);
+			lv_label_set_text(g_act_rows[i].lbl_act, g_acts[i].name);
 
 			char buf[32];
 
-			fmt_time_range(buf, sizeof(buf), g_day_acts[i].start_min,
-				       g_day_acts[i].end_min);
+			fmt_time_range(buf, sizeof(buf), g_acts[i].start_min,
+				       g_acts[i].end_min);
 			lv_label_set_text(g_act_rows[i].lbl_time, buf);
 		} else {
 			lv_obj_add_flag(g_act_rows[i].row, LV_OBJ_FLAG_HIDDEN);
@@ -352,7 +355,7 @@ void ui_tab_overview_refresh(void)
 	g_last_minute = now;
 
 	for (uint8_t i = 0; i < cnt; i++) {
-		bool active = (now >= g_day_acts[i].start_min) && (now < g_day_acts[i].end_min);
+		bool active = (now >= g_acts[i].start_min) && (now < g_acts[i].end_min);
 
 		lv_obj_remove_style(g_act_rows[i].row, &st_row_active, 0);
 		lv_obj_remove_style(g_act_rows[i].row, &st_row, 0);
@@ -360,16 +363,16 @@ void ui_tab_overview_refresh(void)
 	}
 }
 
-void ui_tab_overview_set_day_acts(const act_t *acts, uint8_t count)
+void ui_tab_overview_drain_acts(const struct zbus_channel *chan)
 {
-	if (count > MAX_ACTS) {
-		count = MAX_ACTS;
+	if (chan != &directus_chan) {
+		return;
 	}
-	g_day_acts_count = count;
-
-	for (uint8_t i = 0; i < count; i++) {
-		g_day_acts[i] = acts[i];
+	struct directus_msg msg;
+	zbus_chan_read(&directus_chan, &msg, K_NO_WAIT);
+	g_acts_count = (msg.count > MAX_ACTS) ? MAX_ACTS : msg.count;
+	for (uint8_t i = 0; i < g_acts_count; i++) {
+		g_acts[i] = msg.acts[i];
 	}
-
 	g_last_minute = UINT16_MAX;
 }
