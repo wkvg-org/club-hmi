@@ -16,7 +16,7 @@
 
 LOG_MODULE_REGISTER(ui_globals, LOG_LEVEL_INF);
 
-char g_ui_time_str[16] = "--:--:--";
+char g_ui_time_str[16] = "--:--";
 char g_ui_date_str[16] = "--.--.----";
 
 volatile uint16_t g_now_minutes = 0;

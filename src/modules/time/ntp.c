@@ -277,7 +277,7 @@ static bool is_cest(int64_t utc_secs)
 /* ── Epoch → civil date (y, m, d, hh, mm, ss) ──────────────────────── */
 
 static void epoch_to_civil(int64_t secs, int offset_h,
-			   int *y, int *m, int *d, int *hh, int *mm, int *ss)
+			   int *y, int *m, int *d, int *hh, int *mm)
 {
 	secs += offset_h * 3600;
 	int64_t days = secs / 86400;
@@ -296,14 +296,13 @@ static void epoch_to_civil(int64_t secs, int offset_h,
 	*d  = (int)days + 1;
 	*hh = (int)(tod / 3600);
 	*mm = (int)((tod % 3600) / 60);
-	*ss = (int)(tod % 60);
 }
 
 /* ── Update the UI time/date globals (called every second) ──────────── */
 
 bool time_update_gui_globals(void)
 {
-	int y, mo, d, hh, mm, ss;
+	int y, mo, d, hh, mm;
 
 	if (!g_seeded) {
 		return false;
@@ -312,10 +311,10 @@ bool time_update_gui_globals(void)
 	int64_t utc    = utc_now();
 	int     offset = is_cest(utc) ? 2 : 1;
 
-	epoch_to_civil(utc, offset, &y, &mo, &d, &hh, &mm, &ss);
+	epoch_to_civil(utc, offset, &y, &mo, &d, &hh, &mm);
 
 	snprintf(g_ui_time_str, sizeof(g_ui_time_str),
-		 "%02d:%02d:%02d", hh, mm, ss);
+		 "%02d:%02d", hh, mm);
 	snprintf(g_ui_date_str, sizeof(g_ui_date_str),
 		 "%02d.%02d.%04d", d, mo, y);
 	g_now_minutes = (uint16_t)(hh * 60 + mm);

@@ -15,6 +15,7 @@
 #include "../net/dmx_zbus.h"
 #include "../config/settings.h"
 #include "../net/net.h"
+#include "../net/net_config.h"
 #include "../ui/ui.h"
 
 /* ── colour name table (matches the PicoSpot 45 fixture) ─────────────────── */
@@ -141,6 +142,43 @@ static int cmd_backlight(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+/* ── Network configuration ────────────────────────────────────────────── */
+
+static int cmd_netcfg(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc < 2) {
+		shell_print(sh, "usage: netcfg <dhcp|static <ip> <mask> <gw>|hostname <name>>");
+		return -EINVAL;
+	}
+
+	if (strcmp(argv[1], "dhcp") == 0) {
+		int ret = net_config_set_ipv4(true, NULL, NULL, NULL);
+
+		shell_print(sh, "netcfg: DHCP (ret=%d)", ret);
+	} else if (strcmp(argv[1], "static") == 0) {
+		if (argc < 5) {
+			shell_error(sh, "usage: netcfg static <ip> <mask> <gw>");
+			return -EINVAL;
+		}
+		int ret = net_config_set_ipv4(false, argv[2], argv[3], argv[4]);
+
+		shell_print(sh, "netcfg: static %s (ret=%d)", argv[2], ret);
+	} else if (strcmp(argv[1], "hostname") == 0) {
+		if (argc < 3) {
+			shell_error(sh, "usage: netcfg hostname <name>");
+			return -EINVAL;
+		}
+		int ret = net_config_set_hostname(argv[2]);
+
+		shell_print(sh, "netcfg: hostname %s (ret=%d)", argv[2], ret);
+	} else {
+		shell_error(sh, "unknown netcfg subcommand");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 /* ── Network status ──────────────────────────────────────────────────────── */
 
 #include <zephyr/net/net_if.h>
@@ -210,6 +248,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(net_subcmds,
 );
 
 SHELL_CMD_REGISTER(net, &net_subcmds, "Network info", NULL);
+SHELL_CMD_REGISTER(netcfg, NULL, "network config (dhcp/static/hostname)", cmd_netcfg);
 
 SHELL_STATIC_SUBCMD_SET_CREATE(ui_subcmds,
 	SHELL_CMD_ARG(tab,   NULL, "<overview|pager|light|alarm|settings|dmx>",

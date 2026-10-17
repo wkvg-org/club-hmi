@@ -23,6 +23,7 @@
 #include <stdlib.h>
 
 #include <lvgl.h>
+#include <ix_lvgl/theme.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
@@ -44,6 +45,7 @@ static lv_obj_t *g_color_label;
 static lv_obj_t *g_fixture_btn;
 static lv_obj_t *g_mh1_btn;
 static lv_obj_t *g_mh2_btn;
+static const struct lvgl_ix_palette *g_pal;
 
 struct color_preset {
 	const char *name;
@@ -86,8 +88,8 @@ static void update_pantilt_label(void)
 
 static void update_mh_selector_style(void)
 {
-	lv_color_t sel = lv_color_hex(0x005588);
-	lv_color_t unsel = lv_color_hex(0x333333);
+	lv_color_t sel = g_pal->accent;
+	lv_color_t unsel = g_pal->surface_alt;
 
 	lv_obj_set_style_bg_color(g_mh1_btn, g_mh_addr == MH_ADDR_1 ? sel : unsel, 0);
 	lv_obj_set_style_bg_color(g_mh2_btn, g_mh_addr == MH_ADDR_2 ? sel : unsel, 0);
@@ -124,7 +126,7 @@ static void on_fixture_toggle(lv_event_t *e)
 	zbus_chan_pub(&dmx_chan, &cmd, K_NO_WAIT);
 
 	lv_obj_set_style_bg_color(g_fixture_btn,
-				  g_fixture_on ? lv_color_hex(0x005500) : lv_color_hex(0x444444), 0);
+				  g_fixture_on ? g_pal->success : g_pal->surface_alt, 0);
 	LOG_INF("fixture %s (addr %u)", g_fixture_on ? "on" : "off", FIXTURE_ADDR);
 }
 
@@ -218,6 +220,7 @@ static lv_obj_t *make_slider(lv_obj_t *parent, const char *name,
 	lv_slider_set_range(sl, min, max);
 	lv_slider_set_value(sl, val, LV_ANIM_OFF);
 	lv_obj_set_flex_grow(sl, 1);
+	lv_obj_set_height(sl, 24);
 	lv_obj_add_event_cb(sl, cb, LV_EVENT_VALUE_CHANGED, user_data);
 
 	return row;
@@ -268,8 +271,8 @@ static void build_color_mixer(lv_obj_t *parent)
 				    (void *)&color_presets[i]);
 	}
 
-	make_slider(col, "Dim", lv_color_hex(0xFFFFFF), 0, 255, 0, on_dmx_slider, &ctx_dimmer);
-	make_slider(col, "Str", lv_color_hex(0x888888), 0, 255, 0, on_dmx_slider, &ctx_strobe);
+	make_slider(col, "Dim", g_pal->text, 0, 255, 0, on_dmx_slider, &ctx_dimmer);
+	make_slider(col, "Str", g_pal->text_secondary, 0, 255, 0, on_dmx_slider, &ctx_strobe);
 	lv_obj_set_style_margin_top(lv_obj_get_child(col, lv_obj_get_child_count(col) - 1), 8, 0);
 }
 
@@ -284,11 +287,11 @@ static void build_pan_arc(lv_obj_t *parent)
 	lv_arc_set_value(arc, g_pan_deg);
 	lv_arc_set_rotation(arc, 135);
 	lv_arc_set_bg_angles(arc, 0, 270);
-	lv_obj_set_style_arc_color(arc, lv_color_hex(0x0099ff), LV_PART_INDICATOR);
-	lv_obj_set_style_arc_color(arc, lv_color_hex(0x333333), LV_PART_MAIN);
+	lv_obj_set_style_arc_color(arc, g_pal->accent, LV_PART_INDICATOR);
+	lv_obj_set_style_arc_color(arc, g_pal->border_subtle, LV_PART_MAIN);
 	lv_obj_set_style_arc_width(arc, 12, LV_PART_MAIN);
 	lv_obj_set_style_arc_width(arc, 12, LV_PART_INDICATOR);
-	lv_obj_set_style_bg_color(arc, lv_color_hex(0xffffff), LV_PART_KNOB);
+	lv_obj_set_style_bg_color(arc, g_pal->surface, LV_PART_KNOB);
 	lv_obj_set_style_bg_opa(arc, LV_OPA_COVER, LV_PART_KNOB);
 	lv_obj_set_style_pad_all(arc, 12, LV_PART_KNOB);
 	lv_obj_add_event_cb(arc, on_pan_change, LV_EVENT_VALUE_CHANGED, NULL);
@@ -301,8 +304,9 @@ static void build_tilt_slider(lv_obj_t *parent)
 	lv_obj_set_size(sl, 24, LV_PCT(100));
 	lv_slider_set_range(sl, 0, 200);
 	lv_slider_set_value(sl, 200 - g_tilt_deg, LV_ANIM_OFF);
-	lv_obj_set_style_bg_color(sl, lv_color_hex(0x0099ff), LV_PART_INDICATOR);
-	lv_obj_set_style_pad_all(sl, 4, LV_PART_KNOB);
+	/* Vertical slider: thin track across the width, not the height. */
+	lv_obj_set_style_pad_hor(sl, 10, LV_PART_MAIN);
+	lv_obj_set_style_pad_ver(sl, 0, LV_PART_MAIN);
 	lv_obj_add_event_cb(sl, on_tilt_change, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
@@ -352,6 +356,8 @@ static void build_mh_selector(lv_obj_t *parent)
 
 lv_obj_t *ui_tab_dmx_create(lv_obj_t *parent)
 {
+	g_pal = lvgl_ix_palette_get(LVGL_IX_COLOR_SCHEME_DARK);
+
 	lv_obj_t *page = lv_obj_create(parent);
 	lv_obj_set_size(page, LV_PCT(100), LV_PCT(100));
 	lv_obj_set_style_bg_opa(page, LV_OPA_TRANSP, 0);
@@ -445,16 +451,15 @@ lv_obj_t *ui_tab_dmx_create(lv_obj_t *parent)
 			      LV_FLEX_ALIGN_CENTER);
 
 	lv_obj_t *blk = lv_btn_create(btns);
-	lv_obj_set_style_bg_color(blk, (lv_color_t){50, 50, 50}, 0);
+	lvgl_ix_style_danger_button(blk);
 	lv_obj_set_style_radius(blk, 6, 0);
 	lv_obj_t *bl = lv_label_create(blk);
 	lv_label_set_text(bl, "BLK");
-	lv_obj_set_style_text_color(bl, lv_color_white(), 0);
 	lv_obj_set_style_text_font(bl, &lv_font_montserrat_16, 0);
 	lv_obj_add_event_cb(blk, on_blackout, LV_EVENT_RELEASED, NULL);
 
 	lv_obj_t *hm = lv_btn_create(btns);
-	lv_obj_set_style_bg_color(hm, (lv_color_t){80, 80, 80}, 0);
+	lvgl_ix_style_secondary_button(hm);
 	lv_obj_set_style_radius(hm, 6, 0);
 	lv_obj_t *hl = lv_label_create(hm);
 	lv_label_set_text(hl, "Home");
@@ -463,7 +468,7 @@ lv_obj_t *ui_tab_dmx_create(lv_obj_t *parent)
 	lv_obj_add_event_cb(hm, on_home, LV_EVENT_RELEASED, NULL);
 
 	g_fixture_btn = lv_btn_create(btns);
-	lv_obj_set_style_bg_color(g_fixture_btn, (lv_color_t){68, 68, 68}, 0);
+	lv_obj_set_style_bg_color(g_fixture_btn, g_pal->surface_alt, 0);
 	lv_obj_set_style_radius(g_fixture_btn, 6, 0);
 	lv_obj_t *fl = lv_label_create(g_fixture_btn);
 	lv_label_set_text(fl, "Zephyr Fixture");

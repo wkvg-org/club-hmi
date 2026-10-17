@@ -29,12 +29,17 @@ src/
 module/                  Out-of-tree Zephyr module
 ├── boards/              Custom board definition (waveshare_esp32p4_nano)
 ├── drivers/
-│   ├── mipi_dsi/        MIPI-DSI host driver (espressif,esp-mipi-dsi)
-│   ├── display/         DPI framebuffer scan-out + JD9365 panel + panel-ctl
+│   ├── display/         JD9365 panel + Waveshare panel-ctl (power/backlight)
 │   └── input/           GT911 polled touch driver
 ├── dts/bindings/        Devicetree binding YAMLs
 └── include/             Public driver API headers
 ```
+
+The MIPI-DSI host and the DPI scan-out controller are the **upstream Zephyr
+drivers** (`drivers/mipi_dsi/dsi_esp32.c`, `drivers/display/display_esp32_dsi.c`,
+enabled by `CONFIG_MIPI_DSI_ESP32` / `CONFIG_DISPLAY_ESP32_DSI`). The 800×1280
+panel is mounted landscape; `src/display_rotation.c` rotates the LVGL output
+(270°) into a portrait framebuffer that the display controller scans out.
 
 ### UI tabs
 

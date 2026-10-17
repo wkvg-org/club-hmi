@@ -15,9 +15,10 @@
 
 /dts-v1/;
 
-#include <espressif/esp32p4/esp32p4_n16r32.dtsi>
+#include <espressif/esp32p4/esp32p4.dtsi>
 #include "waveshare_esp32p4_nano_hpcore-pinctrl.dtsi"
 #include <zephyr/dt-bindings/mipi_dsi/mipi_dsi.h>
+#include <zephyr/dt-bindings/display/panel.h>
 #include <espressif/partitions_0x2000_default_16M.dtsi>
 
 / {
@@ -30,7 +31,7 @@
 		zephyr,shell-uart = &uart0;
 		zephyr,flash = &flash0;
 		zephyr,code-partition = &slot0_partition;
-		zephyr,display = &mipi_dsi_dpi;
+		zephyr,display = &dsi_display;
 		zephyr,touch = &gt911;
 	};
 
@@ -38,20 +39,6 @@
 		i2c-0 = &i2c0;
 		uart-0 = &uart0;
 		watchdog0 = &wdt0;
-	};
-
-	/*
-	 * Owns the DSI framebuffer + DW-GDMA scan-out; deliberately a plain
-	 * root child (not a DSI-bus child of &mipi_dsi) since it is not a
-	 * DSI peripheral. Its reg overlaps &mipi_dsi's "bridge" bank on
-	 * purpose: the driver maps that same register window itself.
-	 */
-	mipi_dsi_dpi: mipi-dsi-dpi@500a0800 {
-		compatible = "espressif,esp32-mipi-dsi-dpi";
-		reg = <0x500a0800 0x800>;
-		width = <800>;
-		height = <1280>;
-		pixel-format = <MIPI_DSI_PIXFMT_RGB565>;
 	};
 
 	/* FATFS on the SD card; auto-mounted once the SDHC disk is ready
@@ -67,6 +54,17 @@
 			mount-point = "/SD:";
 		};
 	};
+};
+
+/* 16 MB NOR flash (n16 SKU). */
+&flash0 {
+	reg = <0x0 DT_SIZE_M(16)>;
+	ranges = <0x0 0x0 DT_SIZE_M(16)>;
+};
+
+/* 32 MB PSRAM (r32 SKU), used for the DSI framebuffer. */
+&psram0 {
+	size = <DT_SIZE_M(32)>;
 };
 
 /*
@@ -115,19 +113,14 @@
 	};
 
 	/* GT911 touch controller on the 10.1" DSI display. The board does not
-	 * route the INT/RST pins, so it is polled via I2C. Coordinate
-	 * transform: the panel is mounted landscape (LVGL logical 1280x800,
-	 * ROTATION_270). The GT911 reports panel-native portrait
-	 * coordinates (x: 0-799, y: 0-1279); inverting x and swapping the
-	 * axes maps them into the LVGL logical space (x = touch y,
-	 * y = 799 - touch x). */
+	 * route the INT/RST pins, so it is polled via I2C. Keep the driver's
+	 * native portrait coordinates here; LVGL's display ROTATION_270 applies
+	 * the matching transform exactly once before hit testing. */
 	gt911: gt911@5d {
 		compatible = "waveshare,gt911";
 		reg = <0x5d>;
 		screen-width = <800>;
 		screen-height = <1280>;
-		inverted-x;
-		swapped-x-y;
 	};
 };
 
@@ -225,12 +218,25 @@
 	};
 };
 
+/*
+ * MIPI-DSI host + DPI scan-out controller. Both nodes are defined in the
+ * SoC dtsi (espressif,esp-mipi-dsi under espressif,esp-dsi-display) and
+ * driven by the upstream Zephyr drivers (drivers/mipi_dsi/dsi_esp32.c,
+ * drivers/display/display_esp32_dsi.c). The JD9365 panel hangs off the
+ * host and attaches in video mode with low-power commands.
+ */
+&dsi_display {
+	status = "okay";
+	width = <800>;
+	height = <1280>;
+	pixel-format = <PANEL_PIXEL_FORMAT_RGB_565>;
+};
+
 &mipi_dsi {
 	status = "okay";
 	data-lanes = <2>;
-	lane-bit-rate-mbps = <1500>;
-	dpi-clock-freq-mhz = <80>;
-	phy-supply = <&ldo3>;
+	phy-clock = <1500000000>;
+	dpi-clock-frequency = <80000000>;
 
 	jd9365: jd9365@0 {
 		compatible = "jadard,jd9365";

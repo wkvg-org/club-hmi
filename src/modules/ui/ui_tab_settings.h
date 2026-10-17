@@ -12,5 +12,6 @@
 #include <lvgl.h>
 
 lv_obj_t *build_settings_tab_page(lv_obj_t *parent);
+void ui_tab_settings_hide_keyboard(void);
 
 #endif /* UI_TAB_SETTINGS_H_ */

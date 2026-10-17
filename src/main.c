@@ -32,15 +32,17 @@
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/display.h>
-#include <zephyr/drivers/display/display_esp32_dpi.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <lvgl.h>
+#include <ix_lvgl/theme.h>
 
+#include "display_rotation.h"
 #include "modules/config/bar_config.h"
 #include "modules/net/directus.h"
 #include "modules/net/mqtt.h"
 #include "modules/net/net.h"
+#include "modules/net/net_config.h"
 #include "modules/time/ntp.h"
 #include "modules/config/settings.h"
 #include "modules/ui/ui.h"
@@ -71,24 +73,37 @@ int main(void)
 
 	/*
 	 * The 800×1280 panel is mounted landscape — render the UI in
-	 * landscape (LVGL ROTATION_270 → logical 1280×800) and let the
-	 * driver rotate flushed pixels into the physical portrait
-	 * framebuffer so content appears upright.
+	 * landscape (LVGL ROTATION_270 → logical 1280×800) and rotate the
+	 * flushed pixels into the physical portrait framebuffer (see
+	 * display_rotation.c) so content appears upright.
 	 */
 	lv_display_set_rotation(lv_display_get_default(), LV_DISPLAY_ROTATION_270);
-	display_esp32_dpi_set_rotation(display_dev, 270);
+	ret = display_rotation_init(display_dev, lv_display_get_default(),
+				    LV_DISPLAY_ROTATION_270);
+	if (ret < 0) {
+		LOG_ERR("failed to enable display rotation (%d)", ret);
+		return 0;
+	}
 
 	/* Peripherals and UI */
 	init_config();
+	net_config_init();
 	settings_load();
 	settings_apply_backlight();
+
+	/*
+	 * Install the Siemens iX-inspired dark theme before building the UI;
+	 * widgets created afterwards pick it up automatically.
+	 */
+	lvgl_ix_theme_init(lv_display_get_default(), LVGL_IX_COLOR_SCHEME_DARK, NULL);
+
 	ui_init_and_build();
 
-	ret = display_blanking_off(display_dev);
-	if (ret < 0 && ret != -ENOSYS) {
-		LOG_ERR("failed to turn off display blanking (%d)", ret);
-		return 0;
-	}
+	/*
+	 * The upstream DSI host enables video mode and the bridge DPI output
+	 * as part of the panel attach(), so the panel is already streaming by
+	 * the time main() runs - there is no separate "unblank" step.
+	 */
 
 	/* Start backend threads (wait on net_is_up() internally) */
 	net_init();

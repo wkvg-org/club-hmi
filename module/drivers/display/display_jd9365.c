@@ -6,17 +6,15 @@
  * panel used with the ESP32-P4-NANO board.
  *
  * Mirrors the sequencing used by display_st7701.c: attach() to the MIPI-DSI
- * host first (with MIPI_DSI_MODE_VIDEO already set in mode_flags), then send
- * the panel's DCS init sequence - real video-mode DSI hosts interleave LP
- * commands into blanking intervals even while nominally "in video mode" (see
- * drivers/mipi_dsi/dsi_esp32.c and PLAN.md 2.4).
+ * host first (with MIPI_DSI_MODE_VIDEO and MIPI_DSI_MODE_LPM set so the
+ * upstream host drives the DCS init in low-power mode), then send the
+ * panel's DCS init sequence. The upstream ESP32 DSI host starts video mode
+ * and the scan-out itself as part of attach(), so there is no separate
+ * "start video" step here.
  *
- * This driver has no Zephyr-subsystem API of its own (matching
- * display_waveshare_dsi2dpi.c's pattern): it is purely an init-time actor.
- * The actual zephyr,display device is the sibling
- * espressif,esp32-mipi-dsi-dpi node (drivers/display/display_esp32_dpi.c),
- * which must be ready *before* this driver's init() runs so that the DMA is
- * already feeding the bridge (see PLAN.md 4 for the init-priority chain).
+ * This driver has no Zephyr-subsystem API of its own: it is purely an
+ * init-time actor. The zephyr,display device is the sibling
+ * espressif,esp-dsi-display node (upstream drivers/display/display_esp32_dsi.c).
  */
 
 #define DT_DRV_COMPAT jadard_jd9365
@@ -26,8 +24,6 @@
 #include <zephyr/drivers/mipi_dsi.h>
 #include <zephyr/dt-bindings/mipi_dsi/mipi_dsi.h>
 #include <zephyr/logging/log.h>
-
-#include "../mipi_dsi/dsi_esp32.h"
 
 LOG_MODULE_REGISTER(jd9365, CONFIG_DISPLAY_LOG_LEVEL);
 
@@ -72,7 +68,8 @@ static int jd9365_init(const struct device *dev)
 
 	mdev.data_lanes = cfg->data_lanes;
 	mdev.pixfmt = MIPI_DSI_PIXFMT_RGB565;
-	mdev.mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_BURST;
+	mdev.mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_BURST |
+			  MIPI_DSI_MODE_LPM;
 	mdev.timings.hactive = cfg->width;
 	mdev.timings.hbp = cfg->hbp;
 	mdev.timings.hfp = cfg->hfp;
@@ -101,28 +98,6 @@ static int jd9365_init(const struct device *dev)
 		}
 	}
 
-	/*
-	 * TEST (see PLAN.md): the panel currently renders the LVGL content
-	 * with inverted polarity (dark background shows as bright, NCC ~ -0.6
-	 * vs a blank baseline photo). The Arduino reference never sends DCS
-	 * 0x20/0x21, so the inversion is expected to come from the host/bridge
-	 * data-path config, not the panel - but this is the cheapest possible
-	 * empirical test of the panel-side hypothesis (0x20 = Display
-	 * Inversion OFF).
-	 */
-	{
-		uint8_t inv_off = 0x00;
-
-		mipi_dsi_dcs_write(cfg->mipi_dsi, cfg->channel, 0x20, &inv_off, 1);
-		k_msleep(20);
-	}
-
-	ret = esp32_mipi_dsi_start_video(cfg->mipi_dsi);
-	if (ret < 0) {
-		LOG_ERR("failed to start DSI video mode (%d)", ret);
-		return ret;
-	}
-
 	LOG_INF("JD9365 panel initialised: %ux%u, %u data lane(s)", cfg->width, cfg->height,
 		cfg->data_lanes);
 
@@ -143,7 +118,7 @@ static int jd9365_init(const struct device *dev)
 		.vfp = DT_PROP(DT_INST_CHILD(inst, display_timings), vfront_porch),               \
 		.vsync = DT_PROP(DT_INST_CHILD(inst, display_timings), vsync_len),                \
 	};                                                                                         \
-	DEVICE_DT_INST_DEFINE(inst, jd9365_init, NULL, NULL, &jd9365_cfg_##inst, POST_KERNEL, 70, \
+	DEVICE_DT_INST_DEFINE(inst, jd9365_init, NULL, NULL, &jd9365_cfg_##inst, POST_KERNEL, 90, \
 			      NULL);
 
 DT_INST_FOREACH_STATUS_OKAY(JD9365_DEFINE)

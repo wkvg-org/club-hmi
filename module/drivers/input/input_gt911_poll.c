@@ -96,18 +96,22 @@ static void gt911_process(struct k_work *work)
 	}
 
 	if (!(status & GT911_TOUCH_STATUS_MSK)) {
-		if (data->pressed) {
-			data->pressed = false;
-			input_report_abs(dev, INPUT_ABS_X, data->last_x, false, K_FOREVER);
-			input_report_abs(dev, INPUT_ABS_Y, data->last_y, false, K_FOREVER);
-			input_report_key(dev, INPUT_BTN_TOUCH, 0, true, K_FOREVER);
-		}
 		return;
 	}
 
 	uint8_t points = status & GT911_TOUCH_POINTS_MSK;
 
-	if (points == 0 || points > GT911_MAX_POINTS) {
+	if (points == 0) {
+		gt911_i2c_clear_status(dev);
+		if (data->pressed) {
+			data->pressed = false;
+			input_touchscreen_report_pos(dev, data->last_x, data->last_y, K_FOREVER);
+			input_report_key(dev, INPUT_BTN_TOUCH, 0, true, K_FOREVER);
+		}
+		return;
+	}
+
+	if (points > GT911_MAX_POINTS) {
 		gt911_i2c_clear_status(dev);
 		return;
 	}
@@ -130,12 +134,12 @@ static void gt911_process(struct k_work *work)
 	data->last_x = x;
 	data->last_y = y;
 
+	/* Publish position before press so LVGL never hit-tests the previous tap. */
+	input_touchscreen_report_pos(dev, x, y, K_FOREVER);
 	if (!data->pressed) {
 		data->pressed = true;
 		input_report_key(dev, INPUT_BTN_TOUCH, 1, true, K_FOREVER);
 	}
-
-	input_touchscreen_report_pos(dev, x, y, K_FOREVER);
 }
 
 static void gt911_timer_handler(struct k_timer *timer)

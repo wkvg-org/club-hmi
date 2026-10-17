@@ -69,16 +69,16 @@ struct bar_config_file {
 };
 
 static const struct json_obj_descr cfg_descr[] = {
-	JSON_OBJ_DESCR_PRIM(struct bar_config_data, device_name, JSON_TOK_STRING),
-	JSON_OBJ_DESCR_PRIM(struct bar_config_data, mqtt_server_ip, JSON_TOK_STRING),
-	JSON_OBJ_DESCR_PRIM(struct bar_config_data, mqtt_server_domain, JSON_TOK_STRING),
+	JSON_OBJ_DESCR_PRIM(struct bar_config_data, device_name, JSON_TOK_STRING_BUF),
+	JSON_OBJ_DESCR_PRIM(struct bar_config_data, mqtt_server_ip, JSON_TOK_STRING_BUF),
+	JSON_OBJ_DESCR_PRIM(struct bar_config_data, mqtt_server_domain, JSON_TOK_STRING_BUF),
 	JSON_OBJ_DESCR_PRIM(struct bar_config_data, mqtt_server_port, JSON_TOK_NUMBER),
-	JSON_OBJ_DESCR_PRIM(struct bar_config_data, directus_server_ip, JSON_TOK_STRING),
-	JSON_OBJ_DESCR_PRIM(struct bar_config_data, directus_server_domain, JSON_TOK_STRING),
+	JSON_OBJ_DESCR_PRIM(struct bar_config_data, directus_server_ip, JSON_TOK_STRING_BUF),
+	JSON_OBJ_DESCR_PRIM(struct bar_config_data, directus_server_domain, JSON_TOK_STRING_BUF),
 	JSON_OBJ_DESCR_PRIM(struct bar_config_data, directus_server_port, JSON_TOK_NUMBER),
-	JSON_OBJ_DESCR_PRIM(struct bar_config_data, ntp_server_domain_1, JSON_TOK_STRING),
-	JSON_OBJ_DESCR_PRIM(struct bar_config_data, ntp_server_domain_2, JSON_TOK_STRING),
-	JSON_OBJ_DESCR_PRIM(struct bar_config_data, ntp_server_domain_3, JSON_TOK_STRING),
+	JSON_OBJ_DESCR_PRIM(struct bar_config_data, ntp_server_domain_1, JSON_TOK_STRING_BUF),
+	JSON_OBJ_DESCR_PRIM(struct bar_config_data, ntp_server_domain_2, JSON_TOK_STRING_BUF),
+	JSON_OBJ_DESCR_PRIM(struct bar_config_data, ntp_server_domain_3, JSON_TOK_STRING_BUF),
 	JSON_OBJ_DESCR_PRIM(struct bar_config_data, ntp_server_port, JSON_TOK_NUMBER),
 };
 
@@ -102,12 +102,12 @@ struct creds {
 };
 
 static const struct json_obj_descr mqtt_descr[] = {
-	JSON_OBJ_DESCR_PRIM(struct creds_mqtt, username, JSON_TOK_STRING),
-	JSON_OBJ_DESCR_PRIM(struct creds_mqtt, password, JSON_TOK_STRING),
+	JSON_OBJ_DESCR_PRIM(struct creds_mqtt, username, JSON_TOK_STRING_BUF),
+	JSON_OBJ_DESCR_PRIM(struct creds_mqtt, password, JSON_TOK_STRING_BUF),
 };
 
 static const struct json_obj_descr directus_descr[] = {
-	JSON_OBJ_DESCR_PRIM(struct creds_directus, bearer_token, JSON_TOK_STRING),
+	JSON_OBJ_DESCR_PRIM(struct creds_directus, bearer_token, JSON_TOK_STRING_BUF),
 };
 
 static const struct json_obj_descr creds_descr[] = {

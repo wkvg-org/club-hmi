@@ -12,6 +12,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <lvgl.h>
+#include <ix_lvgl/theme.h>
 
 #include "ui_globals.h"
 #include "ui_tab_overview.h"
@@ -30,9 +31,7 @@ static uint8_t g_act_rows_built = 0;
 
 static act_t  g_acts[MAX_ACTS];
 static uint8_t g_acts_count;
-static lv_style_t st_panel;
-static lv_style_t st_box;
-static lv_style_t st_title;
+static const struct lvgl_ix_palette *g_pal;
 static lv_style_t st_row;
 static lv_style_t st_row_active;
 
@@ -53,10 +52,8 @@ static lv_obj_t *make_title(lv_obj_t *parent, const char *txt)
 	lv_obj_t *label = lv_label_create(parent);
 
 	lv_label_set_text(label, txt);
-	lv_obj_add_style(label, &st_title, 0);
 	lv_obj_set_width(label, LV_PCT(100));
 	lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-	lv_obj_set_style_text_color(label, lv_color_white(), 0);
 	return label;
 }
 
@@ -64,7 +61,7 @@ static lv_obj_t *make_box(lv_obj_t *parent, lv_coord_t w, lv_coord_t h)
 {
 	lv_obj_t *obj = lv_obj_create(parent);
 
-	lv_obj_add_style(obj, &st_box, 0);
+	lvgl_ix_style_surface(obj);
 	lv_obj_set_size(obj, w, h);
 	return obj;
 }
@@ -77,40 +74,22 @@ static void ui_tab_overview_styles_init(void)
 		return;
 	}
 
-	lv_style_init(&st_panel);
-	lv_style_set_bg_color(&st_panel, lv_color_black());
-	lv_style_set_bg_opa(&st_panel, LV_OPA_COVER);
-	lv_style_set_border_color(&st_panel, lv_color_hex(0x777777));
-	lv_style_set_border_width(&st_panel, 2);
-	lv_style_set_radius(&st_panel, 0);
-	lv_style_set_pad_all(&st_panel, 12);
-
-	lv_style_init(&st_box);
-	lv_style_set_bg_color(&st_box, lv_color_black());
-	lv_style_set_bg_opa(&st_box, LV_OPA_COVER);
-	lv_style_set_border_color(&st_box, lv_color_hex(0x777777));
-	lv_style_set_border_width(&st_box, 1);
-	lv_style_set_radius(&st_box, 0);
-	lv_style_set_pad_all(&st_box, 10);
-
-	lv_style_init(&st_title);
-	lv_style_set_text_color(&st_title, lv_color_black());
-	lv_style_set_text_align(&st_title, LV_TEXT_ALIGN_CENTER);
+	g_pal = lvgl_ix_palette_get(LVGL_IX_COLOR_SCHEME_DARK);
 
 	lv_style_init(&st_row);
-	lv_style_set_bg_color(&st_row, lv_color_white());
+	lv_style_set_bg_color(&st_row, g_pal->surface);
 	lv_style_set_bg_opa(&st_row, LV_OPA_COVER);
-	lv_style_set_border_color(&st_row, lv_color_hex(0x777777));
+	lv_style_set_border_color(&st_row, g_pal->border_subtle);
 	lv_style_set_border_width(&st_row, 1);
-	lv_style_set_radius(&st_row, 0);
+	lv_style_set_radius(&st_row, 4);
 	lv_style_set_pad_all(&st_row, 10);
 
 	lv_style_init(&st_row_active);
-	lv_style_set_bg_color(&st_row_active, lv_color_hex(0x40a832));
+	lv_style_set_bg_color(&st_row_active, g_pal->success);
 	lv_style_set_bg_opa(&st_row_active, LV_OPA_COVER);
-	lv_style_set_border_color(&st_row_active, lv_color_hex(0x40a832));
+	lv_style_set_border_color(&st_row_active, g_pal->success);
 	lv_style_set_border_width(&st_row_active, 1);
-	lv_style_set_radius(&st_row_active, 0);
+	lv_style_set_radius(&st_row_active, 4);
 	lv_style_set_pad_all(&st_row_active, 10);
 
 	inited = true;
@@ -130,11 +109,7 @@ static lv_obj_t *build_show_row(lv_obj_t *parent, uint8_t idx)
 
 	lv_obj_t *act_btn = lv_btn_create(row);
 
-	lv_obj_set_style_bg_color(act_btn, lv_color_black(), 0);
-	lv_obj_set_style_bg_opa(act_btn, LV_OPA_COVER, 0);
-	lv_obj_set_style_border_color(act_btn, lv_color_hex(0x777777), 0);
-	lv_obj_set_style_border_width(act_btn, 1, 0);
-	lv_obj_set_style_radius(act_btn, 0, 0);
+	lvgl_ix_style_secondary_button(act_btn);
 	lv_obj_set_size(act_btn, 160, 55);
 
 	lv_obj_t *lbl_act = lv_label_create(act_btn);
@@ -144,7 +119,7 @@ static lv_obj_t *build_show_row(lv_obj_t *parent, uint8_t idx)
 
 	lv_obj_t *time_box = lv_obj_create(row);
 
-	lv_obj_add_style(time_box, &st_box, 0);
+	lvgl_ix_style_surface(time_box);
 	lv_obj_set_flex_grow(time_box, 1);
 	lv_obj_set_height(time_box, 55);
 	lv_obj_set_style_border_width(time_box, 1, 0);
@@ -153,7 +128,6 @@ static lv_obj_t *build_show_row(lv_obj_t *parent, uint8_t idx)
 
 	lv_label_set_text(lbl_time, "--:-- - --:--");
 	lv_obj_set_style_text_font(lbl_time, &lv_font_montserrat_16, 0);
-	lv_obj_set_style_text_color(lbl_time, lv_color_white(), 0);
 	lv_obj_center(lbl_time);
 
 	if (idx < MAX_ACTS) {
@@ -186,7 +160,7 @@ lv_obj_t *ui_tab_overview_build(lv_obj_t *parent)
 
 	lv_obj_t *p_msg = lv_obj_create(page);
 
-	lv_obj_add_style(p_msg, &st_panel, 0);
+	lvgl_ix_style_surface(p_msg);
 	lv_obj_set_width(p_msg, LV_PCT(100));
 	lv_obj_set_flex_grow(p_msg, 1);
 	lv_obj_set_flex_flow(p_msg, LV_FLEX_FLOW_COLUMN);
@@ -229,7 +203,7 @@ lv_obj_t *ui_tab_overview_build(lv_obj_t *parent)
 	const lv_coord_t stufe_w = 120;
 	lv_obj_t *stufe = lv_obj_create(msg_row);
 
-	lv_obj_add_style(stufe, &st_box, 0);
+	lvgl_ix_style_surface(stufe);
 	lv_obj_set_size(stufe, stufe_w, LV_PCT(100));
 	lv_obj_set_flex_flow(stufe, LV_FLEX_FLOW_COLUMN);
 	lv_obj_set_flex_align(stufe, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -250,9 +224,9 @@ lv_obj_t *ui_tab_overview_build(lv_obj_t *parent)
 			     LV_FLEX_ALIGN_CENTER);
 
 	const lv_color_t indicator_colors[3] = {
-		lv_color_hex(0xD32F2F),
-		lv_color_hex(0xFBC02D),
-		lv_color_hex(0x1976D2)};
+		g_pal->danger,
+		g_pal->warning,
+		g_pal->info};
 	const lv_coord_t indicator_diameter = (stufe_w * 6) / 10;
 
 	for (uint8_t i = 0; i < 3; i++) {
@@ -264,28 +238,22 @@ lv_obj_t *ui_tab_overview_build(lv_obj_t *parent)
 		lv_obj_set_style_bg_color(indicator, indicator_colors[i], 0);
 		lv_obj_set_style_bg_opa(indicator, LV_OPA_COVER, 0);
 		lv_obj_set_style_border_width(indicator, 2, 0);
-		lv_obj_set_style_border_color(indicator, lv_color_white(), 0);
+		lv_obj_set_style_border_color(indicator, g_pal->text, 0);
 	}
 
 	lv_obj_t *quitt = lv_btn_create(msg_row);
 
-	lv_obj_set_style_bg_color(quitt, lv_color_black(), 0);
-	lv_obj_set_style_bg_opa(quitt, LV_OPA_COVER, 0);
-	lv_obj_set_style_border_color(quitt, lv_color_hex(0x777777), 0);
-	lv_obj_set_style_border_width(quitt, 2, 0);
-	lv_obj_set_style_radius(quitt, 0, 0);
-	lv_obj_set_style_pad_all(quitt, 12, 0);
+	lvgl_ix_style_secondary_button(quitt);
 	lv_obj_set_size(quitt, 200, LV_PCT(100));
 
 	lv_obj_t *label_quitt = lv_label_create(quitt);
 
 	lv_label_set_text(label_quitt, "Quittieren");
-	lv_obj_set_style_text_color(label_quitt, lv_color_white(), 0);
 	lv_obj_center(label_quitt);
 
 	lv_obj_t *p_show = lv_obj_create(page);
 
-	lv_obj_add_style(p_show, &st_panel, 0);
+	lvgl_ix_style_surface(p_show);
 	lv_obj_set_width(p_show, LV_PCT(100));
 	lv_obj_set_flex_grow(p_show, 1);
 	lv_obj_set_flex_flow(p_show, LV_FLEX_FLOW_COLUMN);
