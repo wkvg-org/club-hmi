@@ -96,19 +96,24 @@ uint8_t settings_get_backlight_percent(void)
 void settings_apply_backlight(void)
 {
 	const struct device *panel_ctl = DEVICE_DT_GET(DT_NODELABEL(panel_ctl));
+	uint8_t raw = (uint8_t)((uint32_t)g_backlight_percent * 255U / 100U);
+	int ret;
 
 	if (!device_is_ready(panel_ctl)) {
-		LOG_ERR("panel-ctl not ready");
+		LOG_ERR("panel-ctl not ready: device=%s backlight=%u%% raw=%u",
+			panel_ctl->name, g_backlight_percent, raw);
 		return;
 	}
 
-	uint8_t raw = (uint8_t)((uint32_t)g_backlight_percent * 255U / 100U);
-
-	if (waveshare_panel_ctl_set_backlight(panel_ctl, raw) < 0) {
-		LOG_ERR("failed to apply backlight");
+	LOG_INF("applying backlight: device=%s percent=%u raw=%u",
+		panel_ctl->name, g_backlight_percent, raw);
+	ret = waveshare_panel_ctl_set_backlight(panel_ctl, raw);
+	if (ret < 0) {
+		LOG_ERR("failed to apply backlight: percent=%u raw=%u ret=%d",
+			g_backlight_percent, raw, ret);
 		return;
 	}
-	LOG_INF("backlight applied: %u%%", g_backlight_percent);
+	LOG_INF("backlight applied: %u%% (raw=%u)", g_backlight_percent, raw);
 }
 
 void settings_set_backlight_percent(uint8_t percent)

@@ -24,6 +24,7 @@
 #include <zephyr/drivers/mipi_dsi.h>
 #include <zephyr/dt-bindings/mipi_dsi/mipi_dsi.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/printk.h>
 
 LOG_MODULE_REGISTER(jd9365, CONFIG_DISPLAY_LOG_LEVEL);
 
@@ -64,7 +65,15 @@ static int jd9365_init(const struct device *dev)
 {
 	const struct jd9365_config *cfg = dev->config;
 	struct mipi_dsi_device mdev = {0};
+	int64_t init_start = k_uptime_get();
 	int ret;
+
+	printk("jd9365: init start dsi=%s ready=%d channel=%u lanes=%u panel=%ux%u\n",
+	       cfg->mipi_dsi->name, device_is_ready(cfg->mipi_dsi), cfg->channel,
+	       cfg->data_lanes, cfg->width, cfg->height);
+	LOG_INF("JD9365 init start: DSI=%s ready=%d channel=%u lanes=%u panel=%ux%u",
+		cfg->mipi_dsi->name, device_is_ready(cfg->mipi_dsi), cfg->channel,
+		cfg->data_lanes, cfg->width, cfg->height);
 
 	mdev.data_lanes = cfg->data_lanes;
 	mdev.pixfmt = MIPI_DSI_PIXFMT_RGB565;
@@ -81,25 +90,50 @@ static int jd9365_init(const struct device *dev)
 
 	ret = mipi_dsi_attach(cfg->mipi_dsi, cfg->channel, &mdev);
 	if (ret < 0) {
-		LOG_ERR("MIPI-DSI attach failed (%d)", ret);
+		printk("jd9365: MIPI-DSI attach failed ret=%d channel=%u mode=0x%x\n",
+		       ret, cfg->channel, mdev.mode_flags);
+		LOG_ERR("MIPI-DSI attach failed (%d): channel=%u lanes=%u mode=0x%x",
+			ret, cfg->channel, cfg->data_lanes, mdev.mode_flags);
 		return ret;
 	}
+	printk("jd9365: MIPI-DSI attached channel=%u mode=0x%x lanes=%u\n",
+	       cfg->channel, mdev.mode_flags, cfg->data_lanes);
+	LOG_INF("MIPI-DSI attached: channel=%u RGB565 mode=0x%x timings h=%u/%u/%u v=%u/%u/%u",
+		cfg->channel, mdev.mode_flags, mdev.timings.hactive, mdev.timings.hbp,
+		mdev.timings.hfp, mdev.timings.vactive, mdev.timings.vbp,
+		mdev.timings.vfp);
 
 	for (size_t i = 0; i < ARRAY_SIZE(jd9365_init_cmds); i++) {
 		const struct jd9365_init_cmd *c = &jd9365_init_cmds[i];
 
 		ret = mipi_dsi_dcs_write(cfg->mipi_dsi, cfg->channel, c->cmd, &c->param, 1);
 		if (ret < 0) {
-			LOG_ERR("DCS write 0x%02x=0x%02x failed (%d)", c->cmd, c->param, ret);
+			printk("jd9365: DCS init command %u failed cmd=0x%02x val=0x%02x ret=%d\n",
+			       (unsigned int)(i + 1), c->cmd, c->param, ret);
+			LOG_ERR("DCS init command %zu/%zu 0x%02x=0x%02x failed (%d) after %lld ms",
+				i + 1, ARRAY_SIZE(jd9365_init_cmds), c->cmd, c->param,
+				ret, k_uptime_get() - init_start);
 			return ret;
+		}
+		if ((i + 1) % 32 == 0 || i + 1 == ARRAY_SIZE(jd9365_init_cmds)) {
+			printk("jd9365: DCS init progress %u/%u last=0x%02x\n",
+			       (unsigned int)(i + 1),
+			       (unsigned int)ARRAY_SIZE(jd9365_init_cmds), c->cmd);
+			LOG_INF("JD9365 init progress: %zu/%zu commands, last=0x%02x, elapsed=%lld ms",
+				i + 1, ARRAY_SIZE(jd9365_init_cmds), c->cmd,
+				k_uptime_get() - init_start);
 		}
 		if (c->delay_ms != 0) {
 			k_msleep(c->delay_ms);
 		}
 	}
 
-	LOG_INF("JD9365 panel initialised: %ux%u, %u data lane(s)", cfg->width, cfg->height,
-		cfg->data_lanes);
+	printk("jd9365: panel initialized %ux%u lanes=%u commands=%u\n",
+	       cfg->width, cfg->height, cfg->data_lanes,
+	       (unsigned int)ARRAY_SIZE(jd9365_init_cmds));
+	LOG_INF("JD9365 panel initialised: %ux%u, %u data lane(s), %zu commands, %lld ms",
+		cfg->width, cfg->height, cfg->data_lanes,
+		ARRAY_SIZE(jd9365_init_cmds), k_uptime_get() - init_start);
 
 	return 0;
 }

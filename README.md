@@ -173,15 +173,16 @@ Boot order in `src/main.c`:
 
 | # | Step | Depends on |
 |---|------|-----------|
-| 1 | MIPI-DSI display init + LVGL rotation (270°) | on-board panel |
-| 2 | `init_config()` + `settings_load()` + `settings_apply_backlight()` | SD card (optional; compiled defaults otherwise) |
-| 3 | `ui_init_and_build()` — LVGL dashboard | display |
-| 4 | `display_blanking_off()` | panel-ctl driver |
-| 5 | `net_init()` — Ethernet EMAC watcher | network link (static IP, DHCP disabled) |
-| 6 | NTP thread (prio 6) — time sync | NTP servers (`192.53.103.108/104/103:123`) |
-| 7 | MQTT thread (prio 5) — publishes DMX/lamp topics | MQTT broker `192.168.2.128:1883` (anonymous) |
-| 8 | Directus thread (prio 4) — fetches event schedule | Directus CMS `directus.moai.sk:443` (HTTPS, bearer token) |
-| 9 | LVGL event loop (main thread, ~200 Hz) | display + all backends |
+| 1 | Panel power sequencing (backlight held off), MIPI-DSI attach + JD9365 init | on-board panel |
+| 2 | LVGL display setup + software rotation framebuffer (270°) | display device, PSRAM |
+| 3 | `init_config()` + `settings_load()` (brightness is saved, not yet applied) | SD card (optional; compiled defaults otherwise) |
+| 4 | `ui_init_and_build()` — LVGL dashboard, then first complete framebuffer write | display |
+| 5 | Apply saved backlight level after first successful full-frame `display_write()` | panel-ctl driver |
+| 6 | `net_init()` — Ethernet EMAC watcher | network link (static IP, DHCP disabled) |
+| 7 | NTP thread (prio 6) — time sync | NTP servers (`192.53.103.108/104/103:123`) |
+| 8 | MQTT thread (prio 5) — publishes DMX/lamp topics | MQTT broker `192.168.2.128:1883` (anonymous) |
+| 9 | Directus thread (prio 4) — fetches event schedule | Directus CMS `directus.moai.sk:443` (HTTPS, bearer token) |
+| 10 | LVGL event loop (main thread, ~200 Hz) | display + all backends |
 
 **Key external dependencies**:
 - **MQTT broker** `192.168.2.128:1883` (mosquitto, anonymous). The HMI is a

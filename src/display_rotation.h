@@ -13,6 +13,7 @@
 #ifndef DISPLAY_ROTATION_H_
 #define DISPLAY_ROTATION_H_
 
+#include <stdbool.h>
 #include <zephyr/device.h>
 #include <lvgl.h>
 
@@ -27,5 +28,10 @@
  */
 int display_rotation_init(const struct device *display, lv_display_t *lv_disp,
 			  lv_display_rotation_t rotation);
+
+/**
+ * @brief Return whether at least one complete frame was accepted by display_write().
+ */
+bool display_rotation_frame_ready(void);
 
 #endif /* DISPLAY_ROTATION_H_ */

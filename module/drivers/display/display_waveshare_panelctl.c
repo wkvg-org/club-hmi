@@ -23,6 +23,7 @@
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/display/waveshare_panel_ctl.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/printk.h>
 
 LOG_MODULE_REGISTER(waveshare_panel_ctl, CONFIG_DISPLAY_LOG_LEVEL);
 
@@ -36,8 +37,18 @@ struct waveshare_panel_ctl_config {
 static int waveshare_panel_ctl_write(const struct device *dev, uint8_t reg, uint8_t val)
 {
 	const struct waveshare_panel_ctl_config *cfg = dev->config;
+	int ret = i2c_reg_write_byte_dt(&cfg->i2c, reg, val);
 
-	return i2c_reg_write_byte_dt(&cfg->i2c, reg, val);
+	if (ret < 0) {
+		printk("panelctl: I2C write failed addr=0x%02x reg=0x%02x val=0x%02x ret=%d\n",
+		       cfg->i2c.addr, reg, val, ret);
+		LOG_ERR("panel controller I2C write failed: addr=0x%02x reg=0x%02x val=0x%02x ret=%d",
+			cfg->i2c.addr, reg, val, ret);
+	} else {
+		printk("panelctl: I2C write addr=0x%02x reg=0x%02x val=0x%02x ok\n",
+		       cfg->i2c.addr, reg, val);
+	}
+	return ret;
 }
 
 int waveshare_panel_ctl_set_backlight(const struct device *dev, uint8_t brightness)
@@ -55,16 +66,25 @@ static int waveshare_panel_ctl_init(const struct device *dev)
 		{WAVESHARE_PANEL_CTL_REG_POWER, 0x11},
 		{WAVESHARE_PANEL_CTL_REG_POWER, 0x17},
 		{WAVESHARE_PANEL_CTL_REG_BACKLIGHT, 0x00},
-		{WAVESHARE_PANEL_CTL_REG_BACKLIGHT, 0xFF},
 	};
 	int ret;
 
 	if (!i2c_is_ready_dt(&cfg->i2c)) {
-		LOG_ERR("I2C bus not ready");
+		printk("panelctl: I2C bus not ready addr=0x%02x\n", cfg->i2c.addr);
+		LOG_ERR("I2C bus not ready: controller addr=0x%02x", cfg->i2c.addr);
 		return -ENODEV;
 	}
+	printk("panelctl: init start bus=%s addr=0x%02x\n",
+	       cfg->i2c.bus->name, cfg->i2c.addr);
+	LOG_INF("panel controller init: I2C bus=%s addr=0x%02x",
+		cfg->i2c.bus->name, cfg->i2c.addr);
 
 	for (size_t i = 0; i < ARRAY_SIZE(power_seq); i++) {
+		printk("panelctl: power step %u/%u reg=0x%02x val=0x%02x\n",
+		       (unsigned int)(i + 1), (unsigned int)ARRAY_SIZE(power_seq),
+		       power_seq[i].reg, power_seq[i].val);
+		LOG_INF("panel power sequence %zu/%zu: reg=0x%02x val=0x%02x",
+			i + 1, ARRAY_SIZE(power_seq), power_seq[i].reg, power_seq[i].val);
 		ret = waveshare_panel_ctl_write(dev, power_seq[i].reg, power_seq[i].val);
 		if (ret < 0) {
 			LOG_ERR("power sequence write 0x%02x=0x%02x failed (%d)",
@@ -74,13 +94,8 @@ static int waveshare_panel_ctl_init(const struct device *dev)
 		k_msleep(100);
 	}
 
-	ret = waveshare_panel_ctl_set_backlight(dev, 0xFF);
-	if (ret < 0) {
-		LOG_ERR("failed to set backlight (%d)", ret);
-		return ret;
-	}
-
-	LOG_INF("Waveshare panel power/backlight controller ready");
+	printk("panelctl: init complete backlight=0 (held off until first frame)\n");
+	LOG_INF("Waveshare panel power controller ready: backlight held off until first frame");
 
 	return 0;
 }
